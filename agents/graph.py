@@ -15,6 +15,11 @@ from rag.answer import answer_question
 
 logger = logging.getLogger(__name__)
 
+STEP_LIMIT_MESSAGE = (
+    "I hit my tool-step limit before reaching a final answer. "
+    "Any papers fetched so far are ingested - try asking again or narrowing the question."
+)
+
 RAG_QUERY_TOOL = {
     "name": "rag_query",
     "description": (
@@ -111,4 +116,5 @@ async def run_agent(question: str) -> str:
             {"messages": [{"role": "user", "content": question}], "steps": 0},
             config={"recursion_limit": settings.agent_max_steps * 2 + 4},
         )
-        return final_text(state)
+        text = final_text(state)
+        return text or STEP_LIMIT_MESSAGE

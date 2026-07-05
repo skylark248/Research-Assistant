@@ -112,3 +112,32 @@ async def test_loop_stops_at_max_steps(monkeypatch):
     await graph.ainvoke({"messages": [{"role": "user", "content": "q"}], "steps": 0})
 
     assert len(seen) == 3  # initial + 2 tool rounds, then the guard ends the loop
+
+
+async def test_run_agent_falls_back_when_step_limit_hit(monkeypatch):
+    import agents.graph as graph_mod
+    from config import settings
+    from rag.answer import RagAnswer
+
+    monkeypatch.setattr(settings, "agent_max_steps", 1)
+    endless = [
+        LLMResponse(tool_calls=[ToolCall(id=f"tu_{i}", name="rag_query",
+                                         input={"question": "q"})])
+        for i in range(5)
+    ]
+    _scripted_generate(monkeypatch, endless)
+    monkeypatch.setattr(graph_mod, "answer_question",
+                        lambda q: RagAnswer(text="partial", sources=[]))
+
+    class FakeToolboxCM:
+        async def __aenter__(self):
+            return FakeToolbox()
+
+        async def __aexit__(self, *exc):
+            return None
+
+    monkeypatch.setattr(graph_mod, "MCPToolbox", FakeToolboxCM)
+
+    reply = await graph_mod.run_agent("q")
+
+    assert reply == graph_mod.STEP_LIMIT_MESSAGE
