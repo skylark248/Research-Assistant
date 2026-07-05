@@ -64,3 +64,20 @@ async def test_call_tool_unknown_tool():
     content, is_error = await box.call_tool("nope", {})
     assert is_error is True
     assert "Unknown tool" in content
+
+
+def test_duplicate_tool_names_first_wins(caplog):
+    from agents.mcp_client import MCPToolbox
+
+    box = MCPToolbox(servers={})
+    first_session = FakeSession()
+    second_session = FakeSession()
+    dup_tool = SimpleNamespace(name="dup", description="d", inputSchema={"type": "object"})
+
+    with caplog.at_level("WARNING"):
+        box._register_tools("server_a", first_session, [dup_tool])
+        box._register_tools("server_b", second_session, [dup_tool])
+
+    assert box._sessions["dup"] is first_session
+    assert len(box.list_tools()) == 1
+    assert any("dup" in record.getMessage() for record in caplog.records)

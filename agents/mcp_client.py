@@ -5,11 +5,14 @@ mcp-server-fetch (via uvx). Tool failures are returned as (message, True)
 results so the agent can decide retry vs give up — never raised.
 """
 
+import logging
 import sys
 from contextlib import AsyncExitStack
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+
+logger = logging.getLogger(__name__)
 
 SERVERS: dict[str, StdioServerParameters] = {
     "arxiv": StdioServerParameters(command=sys.executable, args=["-m", "agents.mcp_server"]),
@@ -32,14 +35,24 @@ class MCPToolbox:
             session = await self._stack.enter_async_context(ClientSession(read, write))
             await session.initialize()
             listing = await session.list_tools()
-            for tool in listing.tools:
-                self._sessions[tool.name] = session
-                self._tools.append({
-                    "name": tool.name,
-                    "description": tool.description or "",
-                    "input_schema": tool.inputSchema,
-                })
+            self._register_tools(server_name, session, listing.tools)
         return self
+
+    def _register_tools(self, server_name: str, session: ClientSession, tools) -> None:
+        """Register tools from a single server. First registration wins on name collision."""
+        for tool in tools:
+            if tool.name in self._sessions:
+                logger.warning(
+                    "Skipping duplicate tool %r from server %r: already registered",
+                    tool.name, server_name,
+                )
+                continue
+            self._sessions[tool.name] = session
+            self._tools.append({
+                "name": tool.name,
+                "description": tool.description or "",
+                "input_schema": tool.inputSchema,
+            })
 
     async def __aexit__(self, *exc) -> None:
         if self._stack is not None:
