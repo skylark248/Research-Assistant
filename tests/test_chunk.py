@@ -1,3 +1,5 @@
+import pytest
+
 from rag.chunk import chunk_text, count_tokens
 
 
@@ -33,3 +35,18 @@ def test_oversized_single_piece_is_hard_split():
     chunks = chunk_text(text, max_tokens=100, overlap_tokens=0)
     assert len(chunks) > 1
     assert all(count_tokens(c) <= 100 for c in chunks)
+
+
+def test_overlap_must_be_smaller_than_max():
+    with pytest.raises(ValueError):
+        chunk_text("some text", max_tokens=20, overlap_tokens=20)
+
+
+def test_chunks_never_exceed_limit_with_large_overlap():
+    # Valid-but-aggressive overlap: tail carry must still respect max_tokens.
+    text = "\n\n".join(
+        f"para {i} alpha beta gamma delta epsilon zeta eta theta iota kappa" for i in range(12)
+    )
+    chunks = chunk_text(text, max_tokens=40, overlap_tokens=30)
+    assert len(chunks) > 1
+    assert all(count_tokens(c) <= 40 for c in chunks)

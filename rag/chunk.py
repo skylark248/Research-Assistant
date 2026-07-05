@@ -38,6 +38,8 @@ def chunk_text(text: str, max_tokens: int | None = None,
     from config import settings
 
     max_tokens = max_tokens or settings.chunk_max_tokens
+    if overlap_tokens is not None and overlap_tokens >= max_tokens:
+        raise ValueError("overlap_tokens must be smaller than max_tokens")
     if overlap_tokens is None:
         overlap_tokens = settings.chunk_overlap_tokens
     text = text.strip()
@@ -53,15 +55,18 @@ def chunk_text(text: str, max_tokens: int | None = None,
         piece_tokens = count_tokens(piece) + 1  # +1 for the join newline
         if current and current_tokens + piece_tokens > max_tokens:
             chunks.append(current)
-            # Carry trailing pieces of the finished chunk as overlap.
+            # Carry trailing pieces of the finished chunk as overlap, capped
+            # so the tail plus the incoming piece never exceeds max_tokens.
+            tail_budget = min(overlap_tokens, max_tokens - piece_tokens)
             tail: list[str] = []
             tail_tokens = 0
-            for prev in reversed(current):
-                t = count_tokens(prev) + 1
-                if tail_tokens + t > overlap_tokens:
-                    break
-                tail.insert(0, prev)
-                tail_tokens += t
+            if tail_budget > 0:
+                for prev in reversed(current):
+                    t = count_tokens(prev) + 1
+                    if tail_tokens + t > tail_budget:
+                        break
+                    tail.insert(0, prev)
+                    tail_tokens += t
             current, current_tokens = tail, tail_tokens
         current.append(piece)
         current_tokens += piece_tokens
