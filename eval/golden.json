@@ -1,0 +1,17 @@
+[
+  {
+    "question": "What attention mechanism does the Transformer architecture rely on, and why does it help with long-range dependencies?",
+    "expected_paper_ids": ["1706.03762"],
+    "expected_answer_gist": "The Transformer relies on multi-head self-attention, which connects any two positions in a sequence in a constant number of sequential operations, making long-range dependencies easier to learn than with recurrence or convolution."
+  },
+  {
+    "question": "What is the key idea behind BERT's pre-training?",
+    "expected_paper_ids": ["1810.04805"],
+    "expected_answer_gist": "BERT pre-trains deep bidirectional representations using a masked language model objective (plus next sentence prediction), then fine-tunes the same model on downstream tasks."
+  },
+  {
+    "question": "How does retrieval-augmented generation combine parametric and non-parametric memory?",
+    "expected_paper_ids": ["2005.11401"],
+    "expected_answer_gist": "RAG combines a pre-trained seq2seq generator (parametric memory) with a dense vector index of Wikipedia accessed by a neural retriever (non-parametric memory), conditioning generation on retrieved passages."
+  }
+]
