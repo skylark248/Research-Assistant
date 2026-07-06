@@ -2,6 +2,7 @@
 the local RAG store, or calling MCP tools (arxiv_search / arxiv_fetch_paper /
 fetch); a tools node executes calls and loops back until a final answer."""
 
+import asyncio
 import logging
 from typing import TypedDict
 
@@ -43,7 +44,9 @@ def build_graph(toolbox):
     tools = [RAG_QUERY_TOOL] + toolbox.list_tools()
 
     async def agent_node(state: AgentState) -> dict:
-        resp = generate(state["messages"], system=AGENT_SYSTEM_PROMPT, tools=tools)
+        resp = await asyncio.to_thread(
+            generate, state["messages"], system=AGENT_SYSTEM_PROMPT, tools=tools
+        )
         content: list[dict] = []
         if resp.text:
             content.append({"type": "text", "text": resp.text})
@@ -62,7 +65,7 @@ def build_graph(toolbox):
             logger.info("Tool call: %s(%s)", name, args)
             if name == "rag_query":
                 try:
-                    ans = answer_question(args["question"])
+                    ans = await asyncio.to_thread(answer_question, args["question"])
                     content = f"{ans.text}\n\nSources: {', '.join(ans.sources) or 'none'}"
                     is_error = False
                 except Exception as exc:  # e.g. Qdrant down — agent decides what to do
