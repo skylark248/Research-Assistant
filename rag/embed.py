@@ -10,7 +10,7 @@ BATCH_SIZE = 100  # texts per embeddings API request
 def _get_client() -> OpenAI:
     global _client
     if _client is None:
-        _client = OpenAI(max_retries=settings.llm_max_retries)
+        _client = OpenAI(api_key=settings.openai_api_key or None, max_retries=settings.llm_max_retries)
     return _client
 
 

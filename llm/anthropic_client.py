@@ -11,7 +11,9 @@ def _get_client() -> anthropic.Anthropic:
     global _client
     if _client is None:
         # max_retries: SDK retries 429/5xx with exponential backoff.
-        _client = anthropic.Anthropic(max_retries=settings.llm_max_retries)
+        _client = anthropic.Anthropic(
+            api_key=settings.anthropic_api_key or None, max_retries=settings.llm_max_retries
+        )
     return _client
 
 
