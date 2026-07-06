@@ -14,10 +14,12 @@ from eval.judge import judge_answer
 from eval.metrics import precision_recall
 from rag.answer import answer_question
 from rag.retrieve import retrieve
+from rag.store import VectorStore
 
 
 def run_eval(dataset_path: str = "eval/golden.json",
              report_path: str = "report.json") -> dict:
+    VectorStore().ping()  # fail fast with a clear message when Qdrant is down
     dataset = json.loads(Path(dataset_path).read_text())
     rows: list[dict] = []
     for item in dataset:

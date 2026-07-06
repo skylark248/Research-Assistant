@@ -15,6 +15,15 @@ def test_run_eval_writes_report(monkeypatch, tmp_path):
     dataset_path.write_text(json.dumps(dataset))
     report_path = tmp_path / "report.json"
 
+    class FakeVectorStore:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def ping(self):
+            pass
+
+    monkeypatch.setattr(run_mod, "VectorStore", FakeVectorStore)
+
     chunk = ScoredChunk(paper_id="1706.03762", title="Attention", text="ctx", score=0.9)
     monkeypatch.setattr(run_mod, "retrieve", lambda q: [chunk])
     monkeypatch.setattr(run_mod, "answer_question",
