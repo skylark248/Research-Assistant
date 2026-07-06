@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 
 import arxiv
+import requests
 from pydantic import BaseModel
 
 from config import settings
@@ -44,4 +45,9 @@ def download_pdf(paper_id: str) -> str:
     if not results:
         raise ValueError(f"No arXiv paper found for id {paper_id}")
     Path(settings.pdf_dir).mkdir(parents=True, exist_ok=True)
-    return results[0].download_pdf(dirpath=settings.pdf_dir, filename=f"{paper_id}.pdf")
+    # arxiv 4.0 removed Result.download_pdf; fetch pdf_url ourselves.
+    path = Path(settings.pdf_dir) / f"{paper_id}.pdf"
+    resp = requests.get(results[0].pdf_url, timeout=60)
+    resp.raise_for_status()
+    path.write_bytes(resp.content)
+    return str(path)

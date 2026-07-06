@@ -1191,6 +1191,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pypdf" },
     { name = "qdrant-client" },
+    { name = "requests" },
     { name = "tiktoken" },
     { name = "uvicorn" },
 ]
@@ -1213,6 +1214,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.5" },
     { name = "pypdf", specifier = ">=5.0" },
     { name = "qdrant-client", specifier = ">=1.12" },
+    { name = "requests", specifier = ">=2.32" },
     { name = "tiktoken", specifier = ">=0.8" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]

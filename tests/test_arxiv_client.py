@@ -6,7 +6,7 @@ import pytest
 def _fake_result(short_id="2405.10098v2", title="T", summary="S"):
     r = SimpleNamespace(title=title, summary=summary)
     r.get_short_id = lambda: short_id
-    r.download_pdf = lambda dirpath, filename: f"{dirpath}/{filename}"
+    r.pdf_url = f"https://arxiv.org/pdf/{short_id}"
     return r
 
 
@@ -55,9 +55,19 @@ def test_download_pdf(monkeypatch, tmp_path):
     fake = _FakeArxivClient([_fake_result("1706.03762v7")])
     monkeypatch.setattr(axc, "_client", lambda: fake)
 
+    fetched_urls = []
+
+    def fake_get(url, timeout):
+        fetched_urls.append(url)
+        return SimpleNamespace(content=b"%PDF-fake", raise_for_status=lambda: None)
+
+    monkeypatch.setattr(axc.requests, "get", fake_get)
+
     path = axc.download_pdf("1706.03762")
     assert path.endswith("1706.03762.pdf")
     assert (tmp_path / "pdfs").is_dir()  # created eagerly
+    assert fetched_urls == ["https://arxiv.org/pdf/1706.03762v7"]
+    assert (tmp_path / "pdfs" / "1706.03762.pdf").read_bytes() == b"%PDF-fake"
 
 
 def test_download_pdf_unknown_id(monkeypatch):

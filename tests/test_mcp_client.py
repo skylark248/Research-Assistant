@@ -66,6 +66,29 @@ async def test_call_tool_unknown_tool():
     assert "Unknown tool" in content
 
 
+async def test_aenter_failure_names_server_and_propagates(monkeypatch, caplog):
+    import agents.mcp_client as mc
+    from mcp import StdioServerParameters
+
+    class BrokenCM:
+        async def __aenter__(self):
+            raise ConnectionError("spawn failed")
+
+        async def __aexit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(mc, "stdio_client", lambda params: BrokenCM())
+    box = mc.MCPToolbox(servers={"fetch": StdioServerParameters(command="uvx", args=["x"])})
+
+    with caplog.at_level("ERROR"):
+        with pytest.raises(ConnectionError, match="spawn failed"):
+            async with box:
+                pass  # pragma: no cover - never reached
+
+    assert box._stack is None  # unwound, safe to retry
+    assert any("fetch" in record.getMessage() for record in caplog.records)
+
+
 def test_duplicate_tool_names_first_wins(caplog):
     from agents.mcp_client import MCPToolbox
 

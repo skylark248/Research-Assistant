@@ -30,12 +30,30 @@ class MCPToolbox:
     async def __aenter__(self) -> "MCPToolbox":
         self._stack = AsyncExitStack()
         await self._stack.__aenter__()
-        for server_name, params in self.servers.items():
-            read, write = await self._stack.enter_async_context(stdio_client(params))
-            session = await self._stack.enter_async_context(ClientSession(read, write))
-            await session.initialize()
-            listing = await session.list_tools()
-            self._register_tools(server_name, session, listing.tools)
+        try:
+            for server_name, params in self.servers.items():
+                try:
+                    read, write = await self._stack.enter_async_context(stdio_client(params))
+                    session = await self._stack.enter_async_context(ClientSession(read, write))
+                    await session.initialize()
+                    listing = await session.list_tools()
+                except Exception:
+                    logger.error(
+                        "MCP server %r failed to start (command: %s %s)",
+                        server_name, params.command, " ".join(params.args),
+                    )
+                    raise
+                self._register_tools(server_name, session, listing.tools)
+        except BaseException:
+            # Unwind servers that did start; a cleanup failure here (e.g. anyio
+            # cancel-scope errors from half-open stdio pipes) must not mask the
+            # startup exception.
+            try:
+                await self._stack.__aexit__(*sys.exc_info())
+            except Exception:
+                logger.debug("Cleanup after failed startup raised", exc_info=True)
+            self._stack = None
+            raise
         return self
 
     def _register_tools(self, server_name: str, session: ClientSession, tools) -> None:
