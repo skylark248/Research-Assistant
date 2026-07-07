@@ -3,7 +3,9 @@
 For each golden item: retrieve → precision/recall vs expected ids; answer via
 the RAG pipeline; LLM-judge the answer. Writes report.json + prints a summary.
 (answer_question retrieves internally too — the double retrieval is accepted
-for simplicity; both calls hit the same store deterministically.)
+for simplicity. With rewrite_enabled the two retrievals may rewrite
+differently and use different chunks — known limitation affecting the "full"
+ablation preset; metrics and judge contexts come from the first retrieval.)
 """
 
 import argparse
