@@ -16,6 +16,8 @@ dependencies = [
     "arxiv>=2.1",
     "tiktoken>=0.8",
     "requests>=2.32",
+    "fastembed>=0.6",
+    "langgraph-checkpoint-sqlite>=2.0",
 ]
 
 [dependency-groups]

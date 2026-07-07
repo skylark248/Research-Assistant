@@ -33,8 +33,23 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 5
     pdf_dir: str = "data/pdfs"
 
+    # Retrieval pipeline (phase 2) — every stage is a flag so eval ablation
+    # can isolate each technique's effect.
+    retrieval_mode: Literal["dense", "sparse", "hybrid"] = "hybrid"
+    rerank_enabled: bool = True
+    rerank_candidates: int = 20  # over-fetch size fed to the reranker
+    rerank_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
+    sparse_model: str = "Qdrant/bm25"
+    rewrite_enabled: bool = False  # needs an LLM key; off until keys exist
+
     # Agent
     agent_max_steps: int = 8
+    agent_mode: Literal["single", "multi"] = "single"
+
+    # Memory (phase 2)
+    checkpoint_db: str = "data/checkpoints.db"
+    memory_max_messages: int = 20  # summarize when history exceeds this
+    memory_keep_messages: int = 8  # recent messages kept verbatim in the prompt
 
 
 settings = Settings()

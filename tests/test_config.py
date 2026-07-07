@@ -21,3 +21,19 @@ def test_env_override(monkeypatch):
     s = Settings(_env_file=None)
     assert s.llm_provider == "openai"
     assert s.retrieval_top_k == 9
+
+
+def test_phase2_defaults():
+    from config import Settings
+
+    s = Settings(_env_file=None)
+    assert s.retrieval_mode == "hybrid"
+    assert s.rerank_enabled is True
+    assert s.rerank_candidates == 20
+    assert s.rerank_model == "Xenova/ms-marco-MiniLM-L-6-v2"
+    assert s.sparse_model == "Qdrant/bm25"
+    assert s.rewrite_enabled is False
+    assert s.agent_mode == "single"
+    assert s.checkpoint_db == "data/checkpoints.db"
+    assert s.memory_max_messages == 20
+    assert s.memory_keep_messages == 8
