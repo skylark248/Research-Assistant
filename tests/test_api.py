@@ -13,17 +13,31 @@ def _client(monkeypatch):
     return TestClient(api_main.app)
 
 
-def test_chat_calls_agent(monkeypatch):
+def test_chat_generates_thread_id(monkeypatch):
     import api.main as api_main
 
-    async def fake_run_agent(question):
-        return f"echo: {question}"
+    async def fake_run_agent(question, thread_id=None):
+        return f"echo: {question} [{thread_id}]"
 
     monkeypatch.setattr(api_main, "run_agent", fake_run_agent)
     with _client(monkeypatch) as client:
         resp = client.post("/api/chat", json={"message": "what is attention?"})
     assert resp.status_code == 200
-    assert resp.json() == {"reply": "echo: what is attention?"}
+    body = resp.json()
+    assert body["thread_id"]  # server minted one
+    assert body["reply"] == f"echo: what is attention? [{body['thread_id']}]"
+
+
+def test_chat_reuses_given_thread_id(monkeypatch):
+    import api.main as api_main
+
+    async def fake_run_agent(question, thread_id=None):
+        return f"echo: {question} [{thread_id}]"
+
+    monkeypatch.setattr(api_main, "run_agent", fake_run_agent)
+    with _client(monkeypatch) as client:
+        resp = client.post("/api/chat", json={"message": "follow-up", "thread_id": "t-42"})
+    assert resp.json() == {"reply": "echo: follow-up [t-42]", "thread_id": "t-42"}
 
 
 def test_ingest_endpoint(monkeypatch):

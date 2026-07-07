@@ -1,4 +1,5 @@
 const log = document.getElementById("log");
+let threadId = null; // set from the first reply; sent back to continue the thread
 
 function append(cls, text) {
   const div = document.createElement("div");
@@ -40,11 +41,19 @@ document.getElementById("chat-btn").addEventListener("click", async () => {
   append("user", `You: ${message}`);
   append("status", "thinking…");
   try {
-    const result = await post("/api/chat", { message });
+    const body = threadId ? { message, thread_id: threadId } : { message };
+    const result = await post("/api/chat", body);
+    threadId = result.thread_id;
     log.lastChild.remove();
     append("bot", `Assistant: ${result.reply}`);
   } catch (err) {
     log.lastChild.remove();
     append("status", `Chat failed: ${err.message}`);
   }
+});
+
+document.getElementById("new-conv-btn").addEventListener("click", () => {
+  threadId = null;
+  log.replaceChildren();
+  append("status", "New conversation started.");
 });

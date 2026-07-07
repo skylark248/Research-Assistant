@@ -1,3 +1,4 @@
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -23,10 +24,12 @@ app = FastAPI(title="Paper Research Assistant", lifespan=lifespan)
 
 class ChatRequest(BaseModel):
     message: str
+    thread_id: str | None = None  # omit to start a new conversation
 
 
 class ChatResponse(BaseModel):
     reply: str
+    thread_id: str
 
 
 class IngestRequest(BaseModel):
@@ -36,8 +39,9 @@ class IngestRequest(BaseModel):
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest) -> ChatResponse:
-    reply = await run_agent(req.message)
-    return ChatResponse(reply=reply)
+    thread_id = req.thread_id or str(uuid.uuid4())
+    reply = await run_agent(req.message, thread_id)
+    return ChatResponse(reply=reply, thread_id=thread_id)
 
 
 @app.post("/api/ingest", response_model=IngestResult)
