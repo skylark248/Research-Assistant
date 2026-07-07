@@ -39,6 +39,9 @@ Chat is multi-turn: the UI carries a `thread_id`, history is checkpointed to
 `data/checkpoints.db`, long conversations get summarized. `AGENT_MODE=multi`
 switches to a planner → researcher → synthesizer supervisor.
 
+Keyless demo: set `RETRIEVAL_MODE=sparse` — BM25-only retrieval, no OpenAI key.
+First reranked query downloads the ~80MB cross-encoder to the local cache.
+
 ## Tests
 
 ```bash
