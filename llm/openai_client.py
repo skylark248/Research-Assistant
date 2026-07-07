@@ -76,10 +76,12 @@ def generate_openai(
     tools: list[dict] | None = None,
     structured_schema: type[BaseModel] | None = None,
     max_tokens: int = 4096,
+    client=None,
+    model: str | None = None,
 ) -> LLMResponse:
-    client = _get_client()
+    client = client or _get_client()
     kwargs: dict = {
-        "model": settings.openai_model,
+        "model": model or settings.openai_model,
         "messages": convert_messages(messages, system),
         "max_completion_tokens": max_tokens,
     }

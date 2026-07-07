@@ -109,3 +109,21 @@ def test_embed_client_empty_key_becomes_none(monkeypatch):
     monkeypatch.setattr(settings, "openai_api_key", "")
     embed._get_client()
     assert captured["api_key"] is None
+
+
+def test_local_client_points_at_ollama(monkeypatch):
+    import llm.local_client as lc
+    from config import settings
+
+    captured = {}
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(lc, "OpenAI", FakeOpenAI)
+    monkeypatch.setattr(lc, "_client", None)
+    lc._get_client()
+    assert captured["base_url"] == settings.local_base_url
+    assert captured["api_key"] == "ollama"  # Ollama ignores it; SDK requires one
+    assert captured["max_retries"] == settings.llm_max_retries

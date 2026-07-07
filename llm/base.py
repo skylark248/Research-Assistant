@@ -28,7 +28,7 @@ def generate(
     provider: str | None = None,
     max_tokens: int | None = None,
 ) -> LLMResponse:
-    """Provider-neutral chat entrypoint.
+    """Provider-neutral chat entrypoint (anthropic | openai | local/Ollama).
 
     `messages` and `tools` use the Anthropic shape everywhere in this codebase;
     the OpenAI client adapts them. `structured_schema` is a pydantic model class;
@@ -47,6 +47,13 @@ def generate(
         from llm.openai_client import generate_openai
 
         return generate_openai(
+            messages, system=system, tools=tools,
+            structured_schema=structured_schema, max_tokens=max_tokens,
+        )
+    if provider == "local":
+        from llm.local_client import generate_local
+
+        return generate_local(
             messages, system=system, tools=tools,
             structured_schema=structured_schema, max_tokens=max_tokens,
         )

@@ -62,3 +62,16 @@ def test_unknown_provider_raises():
 
     with pytest.raises(ValueError, match="Unknown provider"):
         generate([{"role": "user", "content": "hi"}], provider="grok")
+
+
+def test_local_provider_routes_to_local_client(monkeypatch):
+    import llm.local_client as lc
+    from llm.base import LLMResponse, generate
+
+    def fake_generate_local(messages, **kwargs):
+        return LLMResponse(text="from local")
+
+    monkeypatch.setattr(lc, "generate_local", fake_generate_local)
+
+    resp = generate([{"role": "user", "content": "hi"}], provider="local")
+    assert resp.text == "from local"
