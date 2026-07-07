@@ -55,3 +55,54 @@ def test_run_eval_writes_report(monkeypatch, tmp_path):
     assert row["question"] == "q1"
     assert row["answer"] == "ans [1706.03762]"
     assert row["reasoning"] == "r"
+
+
+def test_ablation_sweeps_presets_and_restores_settings(monkeypatch, tmp_path):
+    import eval.run as run_mod
+    from config import settings
+
+    monkeypatch.setattr(settings, "retrieval_mode", "hybrid")
+    monkeypatch.setattr(settings, "rerank_enabled", True)
+    monkeypatch.setattr(settings, "rewrite_enabled", False)
+
+    seen = []
+
+    def fake_run_eval(dataset_path, report_path):
+        seen.append({"preset_report": report_path,
+                     "mode": settings.retrieval_mode,
+                     "rerank": settings.rerank_enabled,
+                     "rewrite": settings.rewrite_enabled})
+        return {"summary": {"n": 1, "avg_precision": 1.0, "avg_recall": 1.0,
+                            "avg_faithfulness": 5.0, "avg_relevance": 5.0,
+                            "avg_citation_accuracy": 5.0}}
+
+    monkeypatch.setattr(run_mod, "run_eval", fake_run_eval)
+    report = run_mod.run_ablation(report_path=str(tmp_path / "ablation.json"))
+
+    assert list(report["presets"]) == ["baseline-dense", "sparse", "hybrid",
+                                       "hybrid+rerank", "full"]
+    assert [s["mode"] for s in seen] == ["dense", "sparse", "hybrid", "hybrid", "hybrid"]
+    assert [s["rerank"] for s in seen] == [False, False, False, True, True]
+    assert [s["rewrite"] for s in seen] == [False, False, False, False, True]
+    assert seen[0]["preset_report"] == str(tmp_path / "report-baseline-dense.json")
+    # settings restored after the sweep
+    assert settings.retrieval_mode == "hybrid"
+    assert settings.rerank_enabled is True
+    assert settings.rewrite_enabled is False
+
+
+def test_ablation_restores_settings_on_failure(monkeypatch, tmp_path):
+    import pytest
+
+    import eval.run as run_mod
+    from config import settings
+
+    monkeypatch.setattr(settings, "retrieval_mode", "hybrid")
+
+    def boom(dataset_path, report_path):
+        raise RuntimeError("qdrant down")
+
+    monkeypatch.setattr(run_mod, "run_eval", boom)
+    with pytest.raises(RuntimeError):
+        run_mod.run_ablation(report_path=str(tmp_path / "ablation.json"))
+    assert settings.retrieval_mode == "hybrid"

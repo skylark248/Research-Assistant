@@ -6,10 +6,12 @@ the RAG pipeline; LLM-judge the answer. Writes report.json + prints a summary.
 for simplicity; both calls hit the same store deterministically.)
 """
 
+import argparse
 import json
 from pathlib import Path
 from statistics import mean
 
+from config import settings
 from eval.judge import judge_answer
 from eval.metrics import precision_recall
 from rag.answer import answer_question
@@ -56,7 +58,58 @@ def run_eval(dataset_path: str = "eval/golden.json",
     return report
 
 
+# Ablation presets: each row of the comparison table. Order matters — the
+# printed table reads as "what did each added technique buy us".
+PRESETS: dict[str, dict] = {
+    "baseline-dense": {"retrieval_mode": "dense", "rerank_enabled": False, "rewrite_enabled": False},
+    "sparse": {"retrieval_mode": "sparse", "rerank_enabled": False, "rewrite_enabled": False},
+    "hybrid": {"retrieval_mode": "hybrid", "rerank_enabled": False, "rewrite_enabled": False},
+    "hybrid+rerank": {"retrieval_mode": "hybrid", "rerank_enabled": True, "rewrite_enabled": False},
+    "full": {"retrieval_mode": "hybrid", "rerank_enabled": True, "rewrite_enabled": True},
+}
+
+
+def run_ablation(dataset_path: str = "eval/golden.json",
+                 report_path: str = "report-ablation.json") -> dict:
+    """Run the golden dataset once per preset; collect summaries side by side.
+
+    Mutates settings per preset and restores the originals afterwards —
+    fine for this offline, single-threaded harness.
+    """
+    fields = ["retrieval_mode", "rerank_enabled", "rewrite_enabled"]
+    original = {f: getattr(settings, f) for f in fields}
+    summaries: dict[str, dict] = {}
+    try:
+        for name, overrides in PRESETS.items():
+            for field, value in overrides.items():
+                setattr(settings, field, value)
+            per_preset_path = str(Path(report_path).with_name(f"report-{name}.json"))
+            summaries[name] = run_eval(dataset_path=dataset_path,
+                                       report_path=per_preset_path)["summary"]
+    finally:
+        for field, value in original.items():
+            setattr(settings, field, value)
+    report = {"presets": summaries}
+    Path(report_path).write_text(json.dumps(report, indent=2))
+    return report
+
+
+def _print_ablation(report: dict) -> None:
+    cols = ["avg_precision", "avg_recall", "avg_faithfulness",
+            "avg_relevance", "avg_citation_accuracy"]
+    print(f"\n{'preset':<16}" + "".join(f"{c.removeprefix('avg_'):>19}" for c in cols))
+    for name, s in report["presets"].items():
+        print(f"{name:<16}" + "".join(f"{s[c]:>19.2f}" for c in cols))
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Offline eval harness")
+    parser.add_argument("--ablation", action="store_true",
+                        help="sweep retrieval presets and print a comparison table")
+    args = parser.parse_args()
+    if args.ablation:
+        _print_ablation(run_ablation())
+        return
     report = run_eval()
     s = report["summary"]
     print(f"\nEvaluated {s['n']} questions -> report.json")
