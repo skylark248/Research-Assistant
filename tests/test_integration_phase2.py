@@ -36,10 +36,14 @@ def test_hybrid_round_trip():
     result = ingest_query("attention is all you need", max_results=1)
     assert result.ingested
 
-    for mode in ("dense", "sparse", "hybrid"):
-        settings.retrieval_mode = mode
-        chunks = retrieve("what is multi-head attention?", top_k=3)
-        assert chunks, f"no results in {mode} mode"
+    original_mode = settings.retrieval_mode
+    try:
+        for mode in ("dense", "sparse", "hybrid"):
+            settings.retrieval_mode = mode
+            chunks = retrieve("what is multi-head attention?", top_k=3)
+            assert chunks, f"no results in {mode} mode"
+    finally:
+        settings.retrieval_mode = original_mode
 
 
 async def test_memory_two_turns():
