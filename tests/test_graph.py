@@ -202,6 +202,34 @@ async def test_summarize_compresses_long_history(monkeypatch, tmp_path):
     assert len(seen[3]["messages"]) <= 3
 
 
+async def test_mid_band_history_not_trimmed(monkeypatch, tmp_path):
+    """Between keep-window and summarize threshold, the agent sees FULL history."""
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+    import agents.graph as graph_mod
+    from config import settings
+
+    monkeypatch.setattr(settings, "memory_keep_messages", 2)
+    monkeypatch.setattr(settings, "memory_max_messages", 20)
+
+    seen = _scripted_generate(monkeypatch, [
+        LLMResponse(text="a1"),
+        LLMResponse(text="a2"),
+        LLMResponse(text="a3"),
+    ])
+    async with AsyncSqliteSaver.from_conn_string(str(tmp_path / "cp.db")) as saver:
+        graph = graph_mod.build_graph(FakeToolbox(), checkpointer=saver)
+        config = {"configurable": {"thread_id": "t1"}}
+        for q in ["q1", "q2", "q3"]:
+            await graph.ainvoke(
+                {"messages": [{"role": "user", "content": q}], "steps": 0}, config=config)
+
+    # 5 messages at third call — above keep=2, below max=20: nothing may be dropped
+    contents = [m["content"] for m in seen[2]["messages"] if isinstance(m["content"], str)]
+    assert contents == ["q1", "q2", "q3"]
+    assert len(seen) == 3  # summarize never fired
+
+
 async def test_trimmed_history_starts_at_plain_user_turn():
     from agents.graph import _trimmed_history
 

@@ -108,7 +108,11 @@ def build_graph(toolbox, checkpointer=None):
         return {"summary": resp.text}
 
     async def agent_node(state: AgentState) -> dict:
-        history = _trimmed_history(state["messages"], settings.memory_keep_messages)
+        messages = state["messages"]
+        if len(messages) <= settings.memory_max_messages:
+            history = messages
+        else:
+            history = _trimmed_history(messages, settings.memory_keep_messages)
         system = AGENT_SYSTEM_PROMPT
         if state.get("summary"):
             system = (f"{AGENT_SYSTEM_PROMPT}\n\n"
