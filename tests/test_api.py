@@ -19,7 +19,7 @@ def test_chat_generates_thread_id(monkeypatch):
     async def fake_run_agent(question, thread_id=None):
         return f"echo: {question} [{thread_id}]"
 
-    monkeypatch.setattr(api_main, "run_agent", fake_run_agent)
+    monkeypatch.setattr(api_main, "run_chat", fake_run_agent)
     with _client(monkeypatch) as client:
         resp = client.post("/api/chat", json={"message": "what is attention?"})
     assert resp.status_code == 200
@@ -34,7 +34,7 @@ def test_chat_reuses_given_thread_id(monkeypatch):
     async def fake_run_agent(question, thread_id=None):
         return f"echo: {question} [{thread_id}]"
 
-    monkeypatch.setattr(api_main, "run_agent", fake_run_agent)
+    monkeypatch.setattr(api_main, "run_chat", fake_run_agent)
     with _client(monkeypatch) as client:
         resp = client.post("/api/chat", json={"message": "follow-up", "thread_id": "t-42"})
     assert resp.json() == {"reply": "echo: follow-up [t-42]", "thread_id": "t-42"}

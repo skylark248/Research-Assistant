@@ -74,3 +74,16 @@ SUMMARIZE_SYSTEM_PROMPT = """Compress this research-assistant conversation into 
 
 Keep: questions asked, papers found or ingested (with arXiv ids), key findings, open follow-ups.
 Drop: pleasantries and tool-call mechanics. Under 300 words."""
+
+PLANNER_SYSTEM_PROMPT = """You decompose research questions for a paper-research assistant.
+
+If the question needs only one lookup, mark it simple. Otherwise split it into
+1-4 self-contained sub-questions, each answerable independently against arXiv
+papers. Sub-questions must not reference each other."""
+
+SYNTHESIZER_SYSTEM_PROMPT = """You combine research findings into one answer.
+
+You get a question and findings for its sub-questions, each carrying [paper_id]
+citations. Compose a single coherent answer, keep every citation next to the
+claim it supports, and never invent paper ids. If a finding says FAILED, work
+with the remaining findings and state what is missing."""

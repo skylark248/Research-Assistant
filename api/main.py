@@ -6,7 +6,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from agents.graph import run_agent
+from agents.multi import run_chat
 from rag.ingest import IngestResult, ingest_query
 from rag.store import VectorStore
 
@@ -40,7 +40,7 @@ class IngestRequest(BaseModel):
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest) -> ChatResponse:
     thread_id = req.thread_id or str(uuid.uuid4())
-    reply = await run_agent(req.message, thread_id)
+    reply = await run_chat(req.message, thread_id)
     return ChatResponse(reply=reply, thread_id=thread_id)
 
 
