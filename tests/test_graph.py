@@ -114,11 +114,12 @@ async def test_loop_stops_at_max_steps(monkeypatch):
     assert len(seen) == 3  # initial + 2 tool rounds, then the guard ends the loop
 
 
-async def test_run_agent_falls_back_when_step_limit_hit(monkeypatch):
+async def test_run_agent_falls_back_when_step_limit_hit(monkeypatch, tmp_path):
     import agents.graph as graph_mod
     from config import settings
     from rag.answer import RagAnswer
 
+    monkeypatch.setattr(settings, "checkpoint_db", str(tmp_path / "checkpoints.db"))
     monkeypatch.setattr(settings, "agent_max_steps", 1)
     endless = [
         LLMResponse(tool_calls=[ToolCall(id=f"tu_{i}", name="rag_query",
@@ -141,3 +142,85 @@ async def test_run_agent_falls_back_when_step_limit_hit(monkeypatch):
     reply = await graph_mod.run_agent("q")
 
     assert reply == graph_mod.STEP_LIMIT_MESSAGE
+
+
+async def test_multi_turn_thread_restores_history(monkeypatch, tmp_path):
+    """Second invoke on the same thread sees the first turn's messages."""
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+    import agents.graph as graph_mod
+
+    seen = _scripted_generate(monkeypatch, [
+        LLMResponse(text="Paris."),
+        LLMResponse(text="About 2 million."),
+    ])
+    async with AsyncSqliteSaver.from_conn_string(str(tmp_path / "cp.db")) as saver:
+        graph = graph_mod.build_graph(FakeToolbox(), checkpointer=saver)
+        config = {"configurable": {"thread_id": "t1"}}
+        await graph.ainvoke({"messages": [{"role": "user", "content": "Capital of France?"}],
+                             "steps": 0}, config=config)
+        state = await graph.ainvoke({"messages": [{"role": "user", "content": "Its population?"}],
+                                     "steps": 0}, config=config)
+
+    assert graph_mod.final_text(state) == "About 2 million."
+    second_call_messages = seen[1]["messages"]
+    contents = [m["content"] for m in second_call_messages if isinstance(m["content"], str)]
+    assert "Capital of France?" in contents  # history restored from the checkpoint
+    assert "Its population?" in contents
+
+
+async def test_summarize_compresses_long_history(monkeypatch, tmp_path):
+    """Past memory_max_messages, older turns get summarized into the system prompt."""
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+    import agents.graph as graph_mod
+    from config import settings
+
+    monkeypatch.setattr(settings, "memory_max_messages", 3)
+    monkeypatch.setattr(settings, "memory_keep_messages", 2)
+
+    # Turn 1 and 2: direct answers. Turn 3: history (5 messages) exceeds the
+    # threshold → summarize node calls generate first, then the agent node.
+    seen = _scripted_generate(monkeypatch, [
+        LLMResponse(text="answer one"),
+        LLMResponse(text="answer two"),
+        LLMResponse(text="THE SUMMARY"),
+        LLMResponse(text="answer three"),
+    ])
+    async with AsyncSqliteSaver.from_conn_string(str(tmp_path / "cp.db")) as saver:
+        graph = graph_mod.build_graph(FakeToolbox(), checkpointer=saver)
+        config = {"configurable": {"thread_id": "t1"}}
+        for q in ["q1", "q2", "q3"]:
+            state = await graph.ainvoke(
+                {"messages": [{"role": "user", "content": q}], "steps": 0}, config=config)
+
+    assert graph_mod.final_text(state) == "answer three"
+    assert len(seen) == 4
+    # the agent call after summarization carries the summary in its system prompt
+    assert "THE SUMMARY" in seen[3]["system"]
+    # and only the keep-window of messages (trimmed history)
+    assert len(seen[3]["messages"]) <= 3
+
+
+async def test_trimmed_history_starts_at_plain_user_turn():
+    from agents.graph import _trimmed_history
+
+    messages = [
+        {"role": "user", "content": "q1"},
+        {"role": "assistant", "content": [{"type": "tool_use", "id": "t1",
+                                           "name": "rag_query", "input": {}}]},
+        {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1",
+                                      "content": "result"}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "a1"}]},
+        {"role": "user", "content": "q2"},
+        {"role": "assistant", "content": [{"type": "text", "text": "a2"}]},
+    ]
+    # keep=3 starts the window at "assistant a1"; the walk-back must pass the
+    # tool_result (list content, not plain) and land on plain user "q1"
+    trimmed = _trimmed_history(messages, keep=3)
+    assert trimmed[0] == {"role": "user", "content": "q1"}
+    # keep=2 starts at "q2" — already a clean boundary, no walk
+    trimmed2 = _trimmed_history(messages, keep=2)
+    assert trimmed2[0] == {"role": "user", "content": "q2"}
+    # short history returned whole
+    assert _trimmed_history(messages[:2], keep=8) == messages[:2]

@@ -1,17 +1,30 @@
-"""LangGraph agent: an LLM node decides between answering directly, querying
-the local RAG store, or calling MCP tools (arxiv_search / arxiv_fetch_paper /
-fetch); a tools node executes calls and loops back until a final answer."""
+"""LangGraph agent with multi-turn memory.
+
+Flow per invoke: summarize (no-op below the threshold) → agent ⇄ tools → END.
+State is checkpointed per thread_id (AsyncSqliteSaver); `messages` uses an
+operator.add reducer, so nodes return ONLY their new messages and invoking a
+checkpointed thread with one new user message appends to restored history.
+
+Long threads: the full history lives in the checkpoint, but the LLM sees a
+trimmed window (_trimmed_history) plus a running summary in the system prompt.
+The summarize node re-summarizes everything outside the window each time it
+fires — costs some tokens, keeps the bookkeeping trivial.
+"""
 
 import asyncio
 import logging
-from typing import TypedDict
+import operator
+import uuid
+from pathlib import Path
+from typing import Annotated, TypedDict
 
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, StateGraph
 
 from agents.mcp_client import MCPToolbox
 from config import settings
 from llm.base import generate
-from llm.prompts import AGENT_SYSTEM_PROMPT
+from llm.prompts import AGENT_SYSTEM_PROMPT, SUMMARIZE_SYSTEM_PROMPT
 from rag.answer import answer_question
 
 logger = logging.getLogger(__name__)
@@ -36,24 +49,78 @@ RAG_QUERY_TOOL = {
 
 
 class AgentState(TypedDict):
-    messages: list[dict]
+    messages: Annotated[list[dict], operator.add]
     steps: int
+    summary: str
 
 
-def build_graph(toolbox):
+def _trimmed_history(messages: list[dict], keep: int) -> list[dict]:
+    """Window of recent messages that starts at a plain user turn.
+
+    Walking back to a plain (string-content) user message keeps tool_use /
+    tool_result pairs intact — an orphaned tool_result at the front of the
+    window would be an API error. Index 0 is always a plain user turn, so the
+    walk terminates.
+    """
+    if len(messages) <= keep:
+        return messages
+    start = len(messages) - keep
+    while start > 0 and not (messages[start]["role"] == "user"
+                             and isinstance(messages[start]["content"], str)):
+        start -= 1
+    return messages[start:]
+
+
+def _render_for_summary(messages: list[dict]) -> str:
+    lines: list[str] = []
+    for m in messages:
+        content = m["content"]
+        if isinstance(content, str):
+            lines.append(f"{m['role']}: {content}")
+            continue
+        for block in content:
+            if block["type"] == "text":
+                lines.append(f"{m['role']}: {block['text']}")
+            elif block["type"] == "tool_use":
+                lines.append(f"{m['role']} called {block['name']}({block['input']})")
+            elif block["type"] == "tool_result":
+                lines.append(f"tool result: {str(block['content'])[:300]}")
+    return "\n".join(lines)
+
+
+def build_graph(toolbox, checkpointer=None):
     tools = [RAG_QUERY_TOOL] + toolbox.list_tools()
 
-    async def agent_node(state: AgentState) -> dict:
+    async def summarize_node(state: AgentState) -> dict:
+        messages = state["messages"]
+        if len(messages) <= settings.memory_max_messages:
+            return {}
+        window = _trimmed_history(messages, settings.memory_keep_messages)
+        older = messages[: len(messages) - len(window)]
+        if not older:
+            return {}
+        prior = state.get("summary", "")
+        prompt = (f"Previous summary:\n{prior}\n\n" if prior else "") + \
+            "Conversation to compress:\n" + _render_for_summary(older)
         resp = await asyncio.to_thread(
-            generate, state["messages"], system=AGENT_SYSTEM_PROMPT, tools=tools
+            generate, [{"role": "user", "content": prompt}], system=SUMMARIZE_SYSTEM_PROMPT
         )
+        return {"summary": resp.text}
+
+    async def agent_node(state: AgentState) -> dict:
+        history = _trimmed_history(state["messages"], settings.memory_keep_messages)
+        system = AGENT_SYSTEM_PROMPT
+        if state.get("summary"):
+            system = (f"{AGENT_SYSTEM_PROMPT}\n\n"
+                      f"Conversation so far (summarized):\n{state['summary']}")
+        resp = await asyncio.to_thread(generate, history, system=system, tools=tools)
         content: list[dict] = []
         if resp.text:
             content.append({"type": "text", "text": resp.text})
         for tc in resp.tool_calls:
             content.append({"type": "tool_use", "id": tc.id, "name": tc.name,
                             "input": tc.input})
-        return {"messages": state["messages"] + [{"role": "assistant", "content": content}]}
+        return {"messages": [{"role": "assistant", "content": content}]}
 
     async def tools_node(state: AgentState) -> dict:
         last = state["messages"][-1]
@@ -75,7 +142,7 @@ def build_graph(toolbox):
             results.append({"type": "tool_result", "tool_use_id": block["id"],
                             "content": content, "is_error": is_error})
         return {
-            "messages": state["messages"] + [{"role": "user", "content": results}],
+            "messages": [{"role": "user", "content": results}],
             "steps": state["steps"] + 1,
         }
 
@@ -89,12 +156,14 @@ def build_graph(toolbox):
         return END
 
     graph = StateGraph(AgentState)
+    graph.add_node("summarize", summarize_node)
     graph.add_node("agent", agent_node)
     graph.add_node("tools", tools_node)
-    graph.set_entry_point("agent")
+    graph.set_entry_point("summarize")
+    graph.add_edge("summarize", "agent")
     graph.add_conditional_edges("agent", route, {"tools": "tools", END: END})
     graph.add_edge("tools", "agent")
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
 
 
 def final_text(state: dict) -> str:
@@ -112,12 +181,18 @@ def final_text(state: dict) -> str:
     return ""
 
 
-async def run_agent(question: str) -> str:
-    async with MCPToolbox() as toolbox:
-        graph = build_graph(toolbox)
+async def run_agent(question: str, thread_id: str | None = None) -> str:
+    """One agent turn. Same thread_id continues a conversation; omitted → fresh
+    single-shot thread (direct callers like eval stay stateless)."""
+    thread_id = thread_id or str(uuid.uuid4())
+    Path(settings.checkpoint_db).parent.mkdir(parents=True, exist_ok=True)
+    async with MCPToolbox() as toolbox, \
+            AsyncSqliteSaver.from_conn_string(settings.checkpoint_db) as saver:
+        graph = build_graph(toolbox, checkpointer=saver)
         state = await graph.ainvoke(
             {"messages": [{"role": "user", "content": question}], "steps": 0},
-            config={"recursion_limit": settings.agent_max_steps * 2 + 4},
+            config={"recursion_limit": settings.agent_max_steps * 2 + 6,
+                    "configurable": {"thread_id": thread_id}},
         )
         text = final_text(state)
         return text or STEP_LIMIT_MESSAGE

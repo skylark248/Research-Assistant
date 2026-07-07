@@ -68,3 +68,9 @@ def build_rag_prompt(question: str, contexts: list[dict]) -> tuple[list[dict], l
     ]
     messages = FEW_SHOT_MESSAGES + [{"role": "user", "content": f"Question: {question}"}]
     return system_blocks, messages
+
+
+SUMMARIZE_SYSTEM_PROMPT = """Compress this research-assistant conversation into a factual running summary.
+
+Keep: questions asked, papers found or ingested (with arXiv ids), key findings, open follow-ups.
+Drop: pleasantries and tool-call mechanics. Under 300 words."""
