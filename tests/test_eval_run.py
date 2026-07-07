@@ -22,6 +22,9 @@ def test_run_eval_writes_report(monkeypatch, tmp_path):
         def ping(self):
             pass
 
+        def check_schema(self):
+            pass
+
     monkeypatch.setattr(run_mod, "VectorStore", FakeVectorStore)
 
     chunk = ScoredChunk(paper_id="1706.03762", title="Attention", text="ctx", score=0.9)

@@ -12,7 +12,9 @@ from rag.store import VectorStore
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    VectorStore().ping()  # fail fast at startup if Qdrant is down (docker compose up -d)
+    store = VectorStore()
+    store.ping()  # fail fast at startup if Qdrant is down (docker compose up -d)
+    store.check_schema()  # fail fast on a phase-1 collection (rag.migrate)
     yield
 
 

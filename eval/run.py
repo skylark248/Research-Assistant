@@ -19,7 +19,9 @@ from rag.store import VectorStore
 
 def run_eval(dataset_path: str = "eval/golden.json",
              report_path: str = "report.json") -> dict:
-    VectorStore().ping()  # fail fast with a clear message when Qdrant is down
+    store = VectorStore()
+    store.ping()  # fail fast with a clear message when Qdrant is down
+    store.check_schema()
     dataset = json.loads(Path(dataset_path).read_text())
     rows: list[dict] = []
     for item in dataset:

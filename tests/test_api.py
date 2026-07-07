@@ -6,6 +6,9 @@ def _client(monkeypatch):
         def ping(self):
             pass
 
+        def check_schema(self):
+            pass
+
     monkeypatch.setattr(api_main, "VectorStore", FakeStore)
     return TestClient(api_main.app)
 
