@@ -37,3 +37,29 @@ def test_phase2_defaults():
     assert s.checkpoint_db == "data/checkpoints.db"
     assert s.memory_max_messages == 20
     assert s.memory_keep_messages == 8
+
+
+def test_phase3_defaults():
+    from config import Settings
+
+    s = Settings(_env_file=None)
+    assert s.llm_provider == "anthropic"  # cloud default unchanged
+    assert s.local_base_url == "http://localhost:11434/v1"
+    assert s.local_model == "qwen2.5:3b"
+    assert s.embedding_provider == "openai"
+    assert s.local_embedding_model == "BAAI/bge-small-en-v1.5"
+
+
+def test_embedding_dim_derived_from_provider():
+    from config import Settings
+
+    assert Settings(_env_file=None).embedding_dim == 1536
+    assert Settings(_env_file=None, embedding_provider="local").embedding_dim == 384
+    # explicit override beats derivation
+    assert Settings(_env_file=None, embedding_provider="local", embedding_dim=999).embedding_dim == 999
+
+
+def test_local_is_valid_llm_provider():
+    from config import Settings
+
+    assert Settings(_env_file=None, llm_provider="local").llm_provider == "local"
