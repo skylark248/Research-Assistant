@@ -45,6 +45,11 @@ def format_context(contexts: list[dict]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+REWRITE_SYSTEM_PROMPT = """You rewrite user questions into search queries for a research-paper vector database.
+
+Return one focused query: expand acronyms, drop conversational filler, keep every technical term. Do not answer the question."""
+
+
 def build_rag_prompt(question: str, contexts: list[dict]) -> tuple[list[dict], list[dict]]:
     """Returns (system_blocks, messages) for generate().
 
