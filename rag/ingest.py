@@ -6,6 +6,7 @@ from rag.arxiv_client import PaperMeta, download_pdf, search_papers
 from rag.chunk import chunk_text
 from rag.embed import embed_texts
 from rag.parse import extract_text
+from rag.sparse import sparse_embed_texts
 from rag.store import ChunkRecord, VectorStore
 
 logger = logging.getLogger(__name__)
@@ -35,10 +36,11 @@ def ingest_paper(meta: PaperMeta, store: VectorStore) -> int | None:
         return None  # extract_text already logged the reason
     chunks = chunk_text(text)
     vectors = embed_texts(chunks)
+    sparse_vectors = sparse_embed_texts(chunks)
     records = [
         ChunkRecord(paper_id=meta.paper_id, title=meta.title,
-                    chunk_index=i, text=chunk, vector=vector)
-        for i, (chunk, vector) in enumerate(zip(chunks, vectors))
+                    chunk_index=i, text=chunk, vector=vector, sparse=sparse)
+        for i, (chunk, vector, sparse) in enumerate(zip(chunks, vectors, sparse_vectors))
     ]
     store.upsert_chunks(records)
     logger.info("Ingested %s (%d chunks)", meta.paper_id, len(records))

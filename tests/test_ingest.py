@@ -29,11 +29,15 @@ class FakeStore:
 
 def _patch_pipeline(monkeypatch, text="some paper text"):
     import rag.ingest as ingest
+    from rag.sparse import SparseVector
 
     monkeypatch.setattr(ingest, "download_pdf", lambda pid: f"/tmp/{pid}.pdf")
     monkeypatch.setattr(ingest, "extract_text", lambda path: text)
     monkeypatch.setattr(ingest, "chunk_text", lambda t: ["chunk a", "chunk b"])
     monkeypatch.setattr(ingest, "embed_texts", lambda chunks: [[0.1], [0.2]])
+    monkeypatch.setattr(ingest, "sparse_embed_texts",
+                        lambda chunks: [SparseVector(indices=[1], values=[1.0]),
+                                        SparseVector(indices=[2], values=[1.0])])
 
 
 def test_ingest_paper_happy_path(monkeypatch):
@@ -48,6 +52,8 @@ def test_ingest_paper_happy_path(monkeypatch):
     assert [r.chunk_index for r in records] == [0, 1]
     assert records[0].paper_id == "1706.03762"
     assert records[0].vector == [0.1]
+    assert records[0].sparse.indices == [1]
+    assert records[1].sparse.indices == [2]
 
 
 def test_ingest_paper_skips_already_ingested(monkeypatch):
