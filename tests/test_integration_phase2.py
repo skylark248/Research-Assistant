@@ -4,6 +4,8 @@ Run: uv run pytest -m integration tests/test_integration_phase2.py
 test_rerank_real_model needs only network (model download), no keys.
 """
 
+import uuid
+
 import pytest
 
 pytestmark = pytest.mark.integration
@@ -26,33 +28,37 @@ def test_rerank_real_model_orders_by_relevance():
 
 
 def test_hybrid_round_trip():
-    """Migrate → ingest → retrieve in all three modes against live Qdrant."""
+    """Migrate → ingest → retrieve in all three modes against a scratch collection."""
     from config import settings
     from rag.ingest import ingest_query
     from rag.migrate import migrate
     from rag.retrieve import retrieve
 
-    migrate()
-    result = ingest_query("attention is all you need", max_results=1)
-    assert result.ingested
-
     original_mode = settings.retrieval_mode
+    original_collection = settings.qdrant_collection
+    settings.qdrant_collection = "papers-it"
     try:
+        migrate()
+        result = ingest_query("attention is all you need", max_results=1)
+        assert result.ingested
+
         for mode in ("dense", "sparse", "hybrid"):
             settings.retrieval_mode = mode
             chunks = retrieve("what is multi-head attention?", top_k=3)
             assert chunks, f"no results in {mode} mode"
     finally:
         settings.retrieval_mode = original_mode
+        settings.qdrant_collection = original_collection
 
 
 async def test_memory_two_turns():
     from agents.graph import run_agent
 
+    thread_id = f"it-memory-{uuid.uuid4()}"
     reply1 = await run_agent("Fetch and summarize 'Attention is All You Need'.",
-                             thread_id="it-memory")
+                             thread_id=thread_id)
     assert reply1
-    reply2 = await run_agent("What did I just ask you about?", thread_id="it-memory")
+    reply2 = await run_agent("What did I just ask you about?", thread_id=thread_id)
     assert "attention" in reply2.lower()
 
 
@@ -66,9 +72,15 @@ async def test_multi_agent_e2e():
 
 def test_ablation_smoke():
     """One full ablation sweep; scores land in [0,1] / [0,5] ranges."""
+    from config import settings
     from eval.run import run_ablation
 
-    report = run_ablation()
+    original_collection = settings.qdrant_collection
+    settings.qdrant_collection = "papers-it"
+    try:
+        report = run_ablation()
+    finally:
+        settings.qdrant_collection = original_collection
     assert set(report["presets"]) == {"baseline-dense", "sparse", "hybrid",
                                       "hybrid+rerank", "full"}
     for summary in report["presets"].values():
