@@ -12,6 +12,27 @@ cp .env.example .env   # add ANTHROPIC_API_KEY and OPENAI_API_KEY
 docker compose up -d   # Qdrant on localhost:6333
 ```
 
+## Fully local (no API keys)
+
+Runs the whole system — ingest, cited chat, memory, multi-agent, eval — on a
+local model. Fits an 8GB M1 MacBook Air.
+
+```bash
+brew install ollama
+ollama pull qwen2.5:3b                      # ~1.9GB
+OLLAMA_CONTEXT_LENGTH=8192 ollama serve     # grounded prompts need >4k context
+```
+
+Set in `.env`: `LLM_PROVIDER=local` and `EMBEDDING_PROVIDER=local`.
+
+Switching the embedding provider changes vector dimensions (1536 → 384), so
+recreate the collection and re-ingest: `uv run python -m rag.migrate --yes`.
+
+Notes: `qwen2.5:3b` is the safe default — `qwen2.5:7b` (~4.7GB) answers better
+but only fits with Docker/browser mostly closed. A 3B model follows citation
+and JSON-schema instructions less reliably than the cloud models; the eval
+harness quantifies the gap. Real-model tests: `uv run pytest -m local`.
+
 ## Use
 
 ```bash
@@ -46,7 +67,8 @@ First reranked query downloads the ~80MB cross-encoder to the local cache.
 
 ```bash
 uv run pytest                  # unit tests (mocked, no keys needed)
-uv run pytest -m integration   # real APIs; needs keys, Qdrant, network, uvx
+uv run pytest -m integration   # real cloud APIs; needs keys, Qdrant, network, uvx
+uv run pytest -m local         # real local model; needs Ollama running, no keys
 ```
 
 ## Layout
