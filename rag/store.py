@@ -15,6 +15,12 @@ LEGACY_SCHEMA_MESSAGE = (
     "(drops ingested chunks; re-ingest papers afterwards)"
 )
 
+DIM_MISMATCH_MESSAGE = (
+    "Collection '{collection}' stores {found}-dim dense vectors but the configured "
+    "embedding provider expects {expected}-dim. Recreate it with: "
+    "uv run python -m rag.migrate --yes (then re-ingest papers)"
+)
+
 
 class ChunkRecord(BaseModel):
     paper_id: str
@@ -58,6 +64,12 @@ class VectorStore:
         if not isinstance(params.vectors, dict) or DENSE_VECTOR not in params.vectors \
                 or not params.sparse_vectors:
             raise RuntimeError(LEGACY_SCHEMA_MESSAGE.format(collection=self.collection))
+        dense = params.vectors[DENSE_VECTOR]
+        if dense.size != settings.embedding_dim:
+            raise RuntimeError(DIM_MISMATCH_MESSAGE.format(
+                collection=self.collection, found=dense.size,
+                expected=settings.embedding_dim,
+            ))
 
     def ensure_collection(self) -> None:
         if not self.client.collection_exists(self.collection):

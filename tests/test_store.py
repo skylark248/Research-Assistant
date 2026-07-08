@@ -6,11 +6,12 @@ from rag.sparse import SparseVector
 
 
 class FakeQdrant:
-    def __init__(self, exists=False, hits=None, fail=False, legacy=False):
+    def __init__(self, exists=False, hits=None, fail=False, legacy=False, dense_size=1536):
         self._exists = exists
         self._hits = hits or []
         self._fail = fail
         self._legacy = legacy
+        self._dense_size = dense_size
         self.created = []
         self.upserted = []
         self.deleted = []
@@ -29,7 +30,7 @@ class FakeQdrant:
             # phase-1 schema: single unnamed dense vector, no sparse vectors
             params = SimpleNamespace(vectors=SimpleNamespace(size=1536), sparse_vectors=None)
         else:
-            params = SimpleNamespace(vectors={"dense": SimpleNamespace(size=1536)},
+            params = SimpleNamespace(vectors={"dense": SimpleNamespace(size=self._dense_size)},
                                      sparse_vectors={"bm25": SimpleNamespace()})
         return SimpleNamespace(config=SimpleNamespace(params=params))
 
@@ -171,3 +172,20 @@ def test_has_paper():
     hit = SimpleNamespace(score=1.0, payload={})
     assert _store(FakeQdrant(hits=[hit])).has_paper("1706.03762") is True
     assert _store(FakeQdrant(hits=[])).has_paper("1706.03762") is False
+
+
+def test_check_schema_rejects_dimension_mismatch(monkeypatch):
+    from config import settings
+
+    monkeypatch.setattr(settings, "embedding_dim", 384)  # e.g. switched to local embeddings
+    fake = FakeQdrant(exists=True, dense_size=1536)      # collection built with openai dims
+    with pytest.raises(RuntimeError, match="1536.*384|384.*1536"):
+        _store(fake).check_schema()
+
+
+def test_check_schema_accepts_matching_dimension(monkeypatch):
+    from config import settings
+
+    monkeypatch.setattr(settings, "embedding_dim", 384)
+    fake = FakeQdrant(exists=True, dense_size=384)
+    _store(fake).check_schema()  # no raise
