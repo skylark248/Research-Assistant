@@ -33,8 +33,9 @@ package = false
 [tool.pytest.ini_options]
 markers = [
     "integration: needs real API keys and a running Qdrant; run with `pytest -m integration`",
+    "local: needs a running Ollama server (no API keys); run with `pytest -m local`",
 ]
-addopts = "-m 'not integration'"
+addopts = "-m 'not integration and not local'"
 asyncio_mode = "auto"
 filterwarnings = [
     # fastapi's TestClient still imports the deprecated httpx-based starlette
