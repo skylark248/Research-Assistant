@@ -22,7 +22,7 @@ async def test_simple_question_falls_through_to_single_agent(monkeypatch):
 
     _patch_plan(monkeypatch, multi_mod.Plan(simple=True))
 
-    async def fake_run_agent(question, thread_id=None):
+    async def fake_run_agent(question, thread_id=None, provider=None):
         return f"single: {question} [{thread_id}]"
 
     monkeypatch.setattr(multi_mod, "run_agent", fake_run_agent)
@@ -38,7 +38,7 @@ async def test_decomposed_question_researches_and_synthesizes(monkeypatch):
     calls = _patch_plan(monkeypatch, plan, synth_text="combined answer [1810.04805]")
     researched = []
 
-    async def fake_run_agent(question, thread_id=None):
+    async def fake_run_agent(question, thread_id=None, provider=None):
         researched.append((question, thread_id))
         return f"finding about {question}"
 
@@ -60,7 +60,7 @@ async def test_failed_researcher_reported_to_synthesizer(monkeypatch):
     plan = multi_mod.Plan(simple=False, sub_questions=["good q", "bad q"])
     calls = _patch_plan(monkeypatch, plan)
 
-    async def flaky_run_agent(question, thread_id=None):
+    async def flaky_run_agent(question, thread_id=None, provider=None):
         if question == "bad q":
             raise RuntimeError("mcp exploded")
         return "a finding"
@@ -77,10 +77,10 @@ async def test_run_chat_dispatches_on_agent_mode(monkeypatch):
     import agents.multi as multi_mod
     from config import settings
 
-    async def fake_single(question, thread_id=None):
+    async def fake_single(question, thread_id=None, provider=None):
         return "single"
 
-    async def fake_multi(question, thread_id=None):
+    async def fake_multi(question, thread_id=None, provider=None):
         return "multi"
 
     monkeypatch.setattr(multi_mod, "run_agent", fake_single)
@@ -90,3 +90,28 @@ async def test_run_chat_dispatches_on_agent_mode(monkeypatch):
     assert await multi_mod.run_chat("q") == "single"
     monkeypatch.setattr(settings, "agent_mode", "multi")
     assert await multi_mod.run_chat("q") == "multi"
+
+
+async def test_provider_reaches_planner_researchers_synthesizer(monkeypatch):
+    import agents.multi as multi_mod
+    from llm.base import LLMResponse
+
+    seen_generate = []
+    seen_agent = []
+
+    def fake_generate(messages, **kwargs):
+        seen_generate.append(kwargs)
+        if kwargs.get("structured_schema") is not None:
+            return LLMResponse(parsed=multi_mod.Plan(simple=False, sub_questions=["a", "b"]))
+        return LLMResponse(text="synthesis")
+
+    async def fake_run_agent(question, thread_id=None, provider=None):
+        seen_agent.append(provider)
+        return f"answer to {question}"
+
+    monkeypatch.setattr(multi_mod, "generate", fake_generate)
+    monkeypatch.setattr(multi_mod, "run_agent", fake_run_agent)
+    reply = await multi_mod.run_multi_agent("big question", provider="openai")
+    assert reply == "synthesis"
+    assert all(k["provider"] == "openai" for k in seen_generate)
+    assert seen_agent == ["openai", "openai"]

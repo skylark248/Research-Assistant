@@ -16,10 +16,10 @@ def _client(monkeypatch):
 def test_chat_generates_thread_id(monkeypatch):
     import api.main as api_main
 
-    async def fake_run_agent(question, thread_id=None):
+    async def fake_run_chat(question, thread_id=None, provider=None):
         return f"echo: {question} [{thread_id}]"
 
-    monkeypatch.setattr(api_main, "run_chat", fake_run_agent)
+    monkeypatch.setattr(api_main, "run_chat", fake_run_chat)
     with _client(monkeypatch) as client:
         resp = client.post("/api/chat", json={"message": "what is attention?"})
     assert resp.status_code == 200
@@ -31,10 +31,10 @@ def test_chat_generates_thread_id(monkeypatch):
 def test_chat_reuses_given_thread_id(monkeypatch):
     import api.main as api_main
 
-    async def fake_run_agent(question, thread_id=None):
+    async def fake_run_chat(question, thread_id=None, provider=None):
         return f"echo: {question} [{thread_id}]"
 
-    monkeypatch.setattr(api_main, "run_chat", fake_run_agent)
+    monkeypatch.setattr(api_main, "run_chat", fake_run_chat)
     with _client(monkeypatch) as client:
         resp = client.post("/api/chat", json={"message": "follow-up", "thread_id": "t-42"})
     assert resp.json() == {"reply": "echo: follow-up [t-42]", "thread_id": "t-42"}
@@ -79,3 +79,51 @@ def test_index_served(monkeypatch):
         resp = client.get("/")
     assert resp.status_code == 200
     assert "Paper Research Assistant" in resp.text
+
+
+def _allow_provider(monkeypatch, available=True, detail=""):
+    import api.main as api_main
+    from api.providers import ProviderStatus
+
+    monkeypatch.setattr(
+        api_main, "check_provider",
+        lambda name: ProviderStatus(provider=name, available=available,
+                                    detail=detail, model="m"),
+    )
+
+
+def test_chat_forwards_provider(monkeypatch):
+    import api.main as api_main
+
+    captured = {}
+
+    async def fake_run_chat(question, thread_id=None, provider=None):
+        captured["provider"] = provider
+        return "ok"
+
+    monkeypatch.setattr(api_main, "run_chat", fake_run_chat)
+    _allow_provider(monkeypatch)
+    with _client(monkeypatch) as client:
+        resp = client.post("/api/chat", json={"message": "hi", "provider": "local"})
+    assert resp.status_code == 200
+    assert captured["provider"] == "local"
+
+
+def test_chat_rejects_unavailable_provider(monkeypatch):
+    import api.main as api_main
+
+    async def fake_run_chat(question, thread_id=None, provider=None):
+        raise AssertionError("agent must not start")
+
+    monkeypatch.setattr(api_main, "run_chat", fake_run_chat)
+    _allow_provider(monkeypatch, available=False, detail="no API key set")
+    with _client(monkeypatch) as client:
+        resp = client.post("/api/chat", json={"message": "hi", "provider": "openai"})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "no API key set"
+
+
+def test_chat_rejects_unknown_provider(monkeypatch):
+    with _client(monkeypatch) as client:
+        resp = client.post("/api/chat", json={"message": "hi", "provider": "gemini"})
+    assert resp.status_code == 422

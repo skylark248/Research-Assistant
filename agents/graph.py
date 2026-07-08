@@ -88,7 +88,7 @@ def _render_for_summary(messages: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def build_graph(toolbox, checkpointer=None):
+def build_graph(toolbox, checkpointer=None, provider: str | None = None):
     tools = [RAG_QUERY_TOOL] + toolbox.list_tools()
 
     async def summarize_node(state: AgentState) -> dict:
@@ -103,7 +103,8 @@ def build_graph(toolbox, checkpointer=None):
         prompt = (f"Previous summary:\n{prior}\n\n" if prior else "") + \
             "Conversation to compress:\n" + _render_for_summary(older)
         resp = await asyncio.to_thread(
-            generate, [{"role": "user", "content": prompt}], system=SUMMARIZE_SYSTEM_PROMPT
+            generate, [{"role": "user", "content": prompt}],
+            system=SUMMARIZE_SYSTEM_PROMPT, provider=provider,
         )
         return {"summary": resp.text}
 
@@ -117,7 +118,8 @@ def build_graph(toolbox, checkpointer=None):
         if state.get("summary"):
             system = (f"{AGENT_SYSTEM_PROMPT}\n\n"
                       f"Conversation so far (summarized):\n{state['summary']}")
-        resp = await asyncio.to_thread(generate, history, system=system, tools=tools)
+        resp = await asyncio.to_thread(generate, history, system=system, tools=tools,
+                                       provider=provider)
         content: list[dict] = []
         if resp.text:
             content.append({"type": "text", "text": resp.text})
@@ -185,14 +187,15 @@ def final_text(state: dict) -> str:
     return ""
 
 
-async def run_agent(question: str, thread_id: str | None = None) -> str:
+async def run_agent(question: str, thread_id: str | None = None,
+                    provider: str | None = None) -> str:
     """One agent turn. Same thread_id continues a conversation; omitted → fresh
     single-shot thread (direct callers like eval stay stateless)."""
     thread_id = thread_id or str(uuid.uuid4())
     Path(settings.checkpoint_db).parent.mkdir(parents=True, exist_ok=True)
     async with MCPToolbox() as toolbox, \
             AsyncSqliteSaver.from_conn_string(settings.checkpoint_db) as saver:
-        graph = build_graph(toolbox, checkpointer=saver)
+        graph = build_graph(toolbox, checkpointer=saver, provider=provider)
         state = await graph.ainvoke(
             {"messages": [{"role": "user", "content": question}], "steps": 0},
             config={"recursion_limit": settings.agent_max_steps * 2 + 6,

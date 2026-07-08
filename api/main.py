@@ -1,7 +1,8 @@
 import uuid
 from contextlib import asynccontextmanager
+from typing import Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -26,6 +27,7 @@ app = FastAPI(title="Paper Research Assistant", lifespan=lifespan)
 class ChatRequest(BaseModel):
     message: str
     thread_id: str | None = None  # omit to start a new conversation
+    provider: Literal["anthropic", "openai", "local"] | None = None  # None → configured default
 
 
 class ChatResponse(BaseModel):
@@ -38,10 +40,19 @@ class IngestRequest(BaseModel):
     max_results: int = 3
 
 
+async def _require_available(provider: str | None) -> None:
+    if provider is None:
+        return
+    status = await run_in_threadpool(check_provider, provider)
+    if not status.available:
+        raise HTTPException(status_code=400, detail=status.detail)
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest) -> ChatResponse:
+    await _require_available(req.provider)
     thread_id = req.thread_id or str(uuid.uuid4())
-    reply = await run_chat(req.message, thread_id)
+    reply = await run_chat(req.message, thread_id, provider=req.provider)
     return ChatResponse(reply=reply, thread_id=thread_id)
 
 

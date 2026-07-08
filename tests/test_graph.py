@@ -252,3 +252,12 @@ async def test_trimmed_history_starts_at_plain_user_turn():
     assert trimmed2[0] == {"role": "user", "content": "q2"}
     # short history returned whole
     assert _trimmed_history(messages[:2], keep=8) == messages[:2]
+
+
+async def test_provider_threads_to_generate(monkeypatch):
+    import agents.graph as graph_mod
+
+    seen = _scripted_generate(monkeypatch, [LLMResponse(text="hi")])
+    graph = graph_mod.build_graph(FakeToolbox(), provider="local")
+    await graph.ainvoke({"messages": [{"role": "user", "content": "q"}], "steps": 0})
+    assert seen[0]["provider"] == "local"
