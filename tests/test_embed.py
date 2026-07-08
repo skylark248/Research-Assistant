@@ -12,7 +12,9 @@ class FakeEmbeddings:
 
 def test_embed_texts_preserves_order(monkeypatch):
     import rag.embed as embed
+    from config import settings
 
+    monkeypatch.setattr(settings, "embedding_provider", "openai")
     fake = FakeEmbeddings()
     monkeypatch.setattr(embed, "_get_client", lambda: SimpleNamespace(embeddings=fake))
 
@@ -23,7 +25,9 @@ def test_embed_texts_preserves_order(monkeypatch):
 
 def test_embed_texts_batches(monkeypatch):
     import rag.embed as embed
+    from config import settings
 
+    monkeypatch.setattr(settings, "embedding_provider", "openai")
     fake = FakeEmbeddings()
     monkeypatch.setattr(embed, "_get_client", lambda: SimpleNamespace(embeddings=fake))
     monkeypatch.setattr(embed, "BATCH_SIZE", 2)
@@ -43,7 +47,9 @@ def test_embed_texts_empty(monkeypatch):
 
 def test_embed_query(monkeypatch):
     import rag.embed as embed
+    from config import settings
 
+    monkeypatch.setattr(settings, "embedding_provider", "openai")
     fake = FakeEmbeddings()
     monkeypatch.setattr(embed, "_get_client", lambda: SimpleNamespace(embeddings=fake))
     assert embed.embed_query("hi") == [2.0]

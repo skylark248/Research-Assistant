@@ -76,9 +76,11 @@ def test_ping_ok():
     _store(FakeQdrant()).ping()  # no raise
 
 
-def test_ensure_collection_creates_named_vectors():
+def test_ensure_collection_creates_named_vectors(monkeypatch):
+    from config import settings
     from rag.store import DENSE_VECTOR, SPARSE_VECTOR
 
+    monkeypatch.setattr(settings, "embedding_dim", 1536)
     fake = FakeQdrant(exists=False)
     _store(fake).ensure_collection()
     assert len(fake.created) == 1
