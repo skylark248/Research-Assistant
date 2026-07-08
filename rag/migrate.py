@@ -2,7 +2,7 @@
 
 Destructive: drops all ingested chunks. PDFs stay cached in data/pdfs, so
 re-ingesting re-parses and re-embeds them (dense re-embedding costs OpenAI
-tokens).
+tokens unless EMBEDDING_PROVIDER=local).
 
 Usage: uv run python -m rag.migrate --yes
 """

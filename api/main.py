@@ -15,7 +15,7 @@ from rag.store import VectorStore
 async def lifespan(app: FastAPI):
     store = VectorStore()
     store.ping()  # fail fast at startup if Qdrant is down (docker compose up -d)
-    store.check_schema()  # fail fast on a phase-1 collection (rag.migrate)
+    store.check_schema()  # fail fast on a phase-1 collection or an embedding-dim mismatch (rag.migrate)
     yield
 
 

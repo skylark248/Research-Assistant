@@ -32,6 +32,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _derive_embedding_dim(self) -> "Settings":
+        # Derivation happens at construction only — reassigning embedding_provider
+        # at runtime does NOT re-derive; set embedding_dim explicitly in that case.
         if self.embedding_dim is None:
             self.embedding_dim = 1536 if self.embedding_provider == "openai" else 384
         return self
