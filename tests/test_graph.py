@@ -139,9 +139,9 @@ async def test_run_agent_falls_back_when_step_limit_hit(monkeypatch, tmp_path):
 
     monkeypatch.setattr(graph_mod, "MCPToolbox", FakeToolboxCM)
 
-    reply = await graph_mod.run_agent("q")
+    result = await graph_mod.run_agent("q")
 
-    assert reply == graph_mod.STEP_LIMIT_MESSAGE
+    assert result.text == graph_mod.STEP_LIMIT_MESSAGE
 
 
 async def test_multi_turn_thread_restores_history(monkeypatch, tmp_path):
@@ -261,3 +261,27 @@ async def test_provider_threads_to_generate(monkeypatch):
     graph = graph_mod.build_graph(FakeToolbox(), provider="local")
     await graph.ainvoke({"messages": [{"role": "user", "content": "q"}], "steps": 0})
     assert seen[0]["provider"] == "local"
+
+
+async def test_citations_collected_from_rag_query(monkeypatch):
+    import agents.graph as graph_mod
+    from rag.answer import RagAnswer
+
+    monkeypatch.setattr(graph_mod, "answer_question",
+                        lambda q: RagAnswer(text="Attention [1706.03762].",
+                                            sources=["1706.03762"]))
+    _scripted_generate(monkeypatch, [
+        LLMResponse(tool_calls=[ToolCall(id="tu_1", name="rag_query",
+                                         input={"question": "what is attention?"})]),
+        LLMResponse(text="It is attention [1706.03762]."),
+    ])
+    graph = graph_mod.build_graph(FakeToolbox())
+    state = await graph.ainvoke({"messages": [{"role": "user", "content": "q"}],
+                                 "steps": 0, "citations": []})
+    assert state["citations"] == ["1706.03762"]
+
+
+def test_dedupe_preserves_order():
+    from agents.graph import _dedupe
+
+    assert _dedupe(["b", "a", "b", "c", "a"]) == ["b", "a", "c"]

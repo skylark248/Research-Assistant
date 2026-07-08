@@ -16,7 +16,7 @@ import logging
 import operator
 import uuid
 from pathlib import Path
-from typing import Annotated, TypedDict
+from typing import Annotated, NamedTuple, TypedDict
 
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, StateGraph
@@ -33,6 +33,17 @@ STEP_LIMIT_MESSAGE = (
     "I hit my tool-step limit before reaching a final answer. "
     "Any papers fetched so far are ingested - try asking again or narrowing the question."
 )
+
+
+class AgentResult(NamedTuple):
+    text: str
+    citations: list[str]
+
+
+def _dedupe(items: list[str]) -> list[str]:
+    """Order-preserving dedupe (dict keys keep insertion order)."""
+    return list(dict.fromkeys(items))
+
 
 RAG_QUERY_TOOL = {
     "name": "rag_query",
@@ -52,6 +63,7 @@ class AgentState(TypedDict):
     messages: Annotated[list[dict], operator.add]
     steps: int
     summary: str
+    citations: Annotated[list[str], operator.add]
 
 
 def _trimmed_history(messages: list[dict], keep: int) -> list[dict]:
@@ -131,6 +143,7 @@ def build_graph(toolbox, checkpointer=None, provider: str | None = None):
     async def tools_node(state: AgentState) -> dict:
         last = state["messages"][-1]
         results: list[dict] = []
+        sources: list[str] = []
         for block in last["content"]:
             if block["type"] != "tool_use":
                 continue
@@ -141,6 +154,7 @@ def build_graph(toolbox, checkpointer=None, provider: str | None = None):
                     ans = await asyncio.to_thread(answer_question, args["question"])
                     content = f"{ans.text}\n\nSources: {', '.join(ans.sources) or 'none'}"
                     is_error = False
+                    sources.extend(ans.sources)
                 except Exception as exc:  # e.g. Qdrant down — agent decides what to do
                     content, is_error = f"rag_query failed: {exc}", True
             else:
@@ -150,6 +164,7 @@ def build_graph(toolbox, checkpointer=None, provider: str | None = None):
         return {
             "messages": [{"role": "user", "content": results}],
             "steps": state["steps"] + 1,
+            "citations": sources,
         }
 
     def route(state: AgentState) -> str:
@@ -188,7 +203,7 @@ def final_text(state: dict) -> str:
 
 
 async def run_agent(question: str, thread_id: str | None = None,
-                    provider: str | None = None) -> str:
+                    provider: str | None = None) -> AgentResult:
     """One agent turn. Same thread_id continues a conversation; omitted → fresh
     single-shot thread (direct callers like eval stay stateless)."""
     thread_id = thread_id or str(uuid.uuid4())
@@ -197,9 +212,11 @@ async def run_agent(question: str, thread_id: str | None = None,
             AsyncSqliteSaver.from_conn_string(settings.checkpoint_db) as saver:
         graph = build_graph(toolbox, checkpointer=saver, provider=provider)
         state = await graph.ainvoke(
-            {"messages": [{"role": "user", "content": question}], "steps": 0},
+            {"messages": [{"role": "user", "content": question}], "steps": 0,
+             "citations": []},
             config={"recursion_limit": settings.agent_max_steps * 2 + 6,
                     "configurable": {"thread_id": thread_id}},
         )
         text = final_text(state)
-        return text or STEP_LIMIT_MESSAGE
+        return AgentResult(text=text or STEP_LIMIT_MESSAGE,
+                           citations=_dedupe(state.get("citations", [])))

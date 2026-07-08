@@ -55,19 +55,19 @@ async def test_memory_two_turns():
     from agents.graph import run_agent
 
     thread_id = f"it-memory-{uuid.uuid4()}"
-    reply1 = await run_agent("Fetch and summarize 'Attention is All You Need'.",
-                             thread_id=thread_id)
-    assert reply1
-    reply2 = await run_agent("What did I just ask you about?", thread_id=thread_id)
-    assert "attention" in reply2.lower()
+    result1 = await run_agent("Fetch and summarize 'Attention is All You Need'.",
+                              thread_id=thread_id)
+    assert result1.text
+    result2 = await run_agent("What did I just ask you about?", thread_id=thread_id)
+    assert "attention" in result2.text.lower()
 
 
 async def test_multi_agent_e2e():
     from agents.multi import run_multi_agent
 
-    reply = await run_multi_agent(
+    result = await run_multi_agent(
         "Compare the transformer architecture with BERT's pretraining objectives.")
-    assert len(reply) > 50
+    assert len(result.text) > 50
 
 
 def test_ablation_smoke():

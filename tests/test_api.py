@@ -15,9 +15,10 @@ def _client(monkeypatch):
 
 def test_chat_generates_thread_id(monkeypatch):
     import api.main as api_main
+    from agents.graph import AgentResult
 
     async def fake_run_chat(question, thread_id=None, provider=None):
-        return f"echo: {question} [{thread_id}]"
+        return AgentResult(text=f"echo: {question} [{thread_id}]", citations=[])
 
     monkeypatch.setattr(api_main, "run_chat", fake_run_chat)
     with _client(monkeypatch) as client:
@@ -30,14 +31,15 @@ def test_chat_generates_thread_id(monkeypatch):
 
 def test_chat_reuses_given_thread_id(monkeypatch):
     import api.main as api_main
+    from agents.graph import AgentResult
 
     async def fake_run_chat(question, thread_id=None, provider=None):
-        return f"echo: {question} [{thread_id}]"
+        return AgentResult(text=f"echo: {question} [{thread_id}]", citations=[])
 
     monkeypatch.setattr(api_main, "run_chat", fake_run_chat)
     with _client(monkeypatch) as client:
         resp = client.post("/api/chat", json={"message": "follow-up", "thread_id": "t-42"})
-    assert resp.json() == {"reply": "echo: follow-up [t-42]", "thread_id": "t-42"}
+    assert resp.json() == {"reply": "echo: follow-up [t-42]", "thread_id": "t-42", "citations": []}
 
 
 def test_ingest_endpoint(monkeypatch):
@@ -94,12 +96,13 @@ def _allow_provider(monkeypatch, available=True, detail=""):
 
 def test_chat_forwards_provider(monkeypatch):
     import api.main as api_main
+    from agents.graph import AgentResult
 
     captured = {}
 
     async def fake_run_chat(question, thread_id=None, provider=None):
         captured["provider"] = provider
-        return "ok"
+        return AgentResult(text="ok", citations=[])
 
     monkeypatch.setattr(api_main, "run_chat", fake_run_chat)
     _allow_provider(monkeypatch)
@@ -127,3 +130,16 @@ def test_chat_rejects_unknown_provider(monkeypatch):
     with _client(monkeypatch) as client:
         resp = client.post("/api/chat", json={"message": "hi", "provider": "gemini"})
     assert resp.status_code == 422
+
+
+def test_chat_returns_citations(monkeypatch):
+    import api.main as api_main
+    from agents.graph import AgentResult
+
+    async def fake_run_chat(question, thread_id=None, provider=None):
+        return AgentResult(text="grounded", citations=["1706.03762"])
+
+    monkeypatch.setattr(api_main, "run_chat", fake_run_chat)
+    with _client(monkeypatch) as client:
+        resp = client.post("/api/chat", json={"message": "hi"})
+    assert resp.json()["citations"] == ["1706.03762"]

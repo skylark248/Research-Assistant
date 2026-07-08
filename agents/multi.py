@@ -13,7 +13,7 @@ import logging
 
 from pydantic import BaseModel, Field
 
-from agents.graph import run_agent
+from agents.graph import AgentResult, _dedupe, run_agent
 from config import settings
 from llm.base import generate
 from llm.prompts import PLANNER_SYSTEM_PROMPT, SYNTHESIZER_SYSTEM_PROMPT
@@ -43,22 +43,26 @@ def _synthesize(question: str, findings: list[tuple[str, str]],
 
 
 async def run_multi_agent(question: str, thread_id: str | None = None,
-                          provider: str | None = None) -> str:
+                          provider: str | None = None) -> AgentResult:
     plan = await asyncio.to_thread(_plan, question, provider)
     if plan.simple or not plan.sub_questions:
         return await run_agent(question, thread_id, provider=provider)
     findings: list[tuple[str, str]] = []
+    citations: list[str] = []
     for sub_question in plan.sub_questions[:4]:
         try:
-            findings.append((sub_question, await run_agent(sub_question, provider=provider)))
+            result = await run_agent(sub_question, provider=provider)
+            findings.append((sub_question, result.text))
+            citations.extend(result.citations)
         except Exception as exc:
             logger.exception("Researcher failed for %r", sub_question)
             findings.append((sub_question, f"FAILED: {exc}"))
-    return await asyncio.to_thread(_synthesize, question, findings, provider)
+    text = await asyncio.to_thread(_synthesize, question, findings, provider)
+    return AgentResult(text=text, citations=_dedupe(citations))
 
 
 async def run_chat(message: str, thread_id: str | None = None,
-                   provider: str | None = None) -> str:
+                   provider: str | None = None) -> AgentResult:
     """Dispatch on agent_mode: the single loop (default) or the supervisor."""
     if settings.agent_mode == "multi":
         return await run_multi_agent(message, thread_id, provider=provider)

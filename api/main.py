@@ -33,6 +33,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     thread_id: str
+    citations: list[str] = []
 
 
 class IngestRequest(BaseModel):
@@ -52,8 +53,9 @@ async def _require_available(provider: str | None) -> None:
 async def chat(req: ChatRequest) -> ChatResponse:
     await _require_available(req.provider)
     thread_id = req.thread_id or str(uuid.uuid4())
-    reply = await run_chat(req.message, thread_id, provider=req.provider)
-    return ChatResponse(reply=reply, thread_id=thread_id)
+    result = await run_chat(req.message, thread_id, provider=req.provider)
+    return ChatResponse(reply=result.text, thread_id=thread_id,
+                        citations=result.citations)
 
 
 @app.post("/api/ingest", response_model=IngestResult)
