@@ -48,8 +48,8 @@ Response: list of `{provider, available, detail, model}`.
 
 - `detail` carries the human-readable reason when unavailable
   ("no API key set", "Ollama unreachable at http://localhost:11434/v1").
-- `httpx` moves from dev-only to runtime dependency (used for the Ollama
-  probe; async-friendly inside FastAPI).
+- The Ollama probe uses `requests` (already a runtime dependency), executed
+  via `run_in_threadpool`; `httpx` stays dev-only.
 - Frontend calls this on load: dropdown lists all three providers, disables
   unavailable ones, selects `settings.llm_provider` if alive, else the first
   alive one.

@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from agents.multi import run_chat
+from api.providers import ProviderStatus, check_provider, check_providers
 from rag.ingest import IngestResult, ingest_query
 from rag.store import VectorStore
 
@@ -48,6 +49,12 @@ async def chat(req: ChatRequest) -> ChatResponse:
 async def ingest(req: IngestRequest) -> IngestResult:
     # ingest_query is blocking (network + embeddings); keep the event loop free.
     return await run_in_threadpool(ingest_query, req.query, req.max_results)
+
+
+@app.get("/api/providers", response_model=list[ProviderStatus])
+async def providers() -> list[ProviderStatus]:
+    # check_providers may block up to 1.5s probing Ollama; keep the loop free.
+    return await run_in_threadpool(check_providers)
 
 
 # Mounted last so /api/* wins routing; html=True serves index.html at /.
