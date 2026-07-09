@@ -9,6 +9,8 @@ from pydantic import BaseModel
 
 from agents.multi import run_chat
 from api.providers import ProviderStatus, check_provider, check_providers
+from api.threads import (ThreadInfo, TranscriptTurn, delete_thread, get_transcript,
+                         list_threads, upsert_thread)
 from rag.ingest import IngestResult, ingest_query
 from rag.store import VectorStore
 
@@ -54,6 +56,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
     await _require_available(req.provider)
     thread_id = req.thread_id or str(uuid.uuid4())
     result = await run_chat(req.message, thread_id, provider=req.provider)
+    await run_in_threadpool(upsert_thread, thread_id, req.message)
     return ChatResponse(reply=result.text, thread_id=thread_id,
                         citations=result.citations)
 
@@ -68,6 +71,25 @@ async def ingest(req: IngestRequest) -> IngestResult:
 async def providers() -> list[ProviderStatus]:
     # check_providers may block up to 1.5s probing Ollama; keep the loop free.
     return await run_in_threadpool(check_providers)
+
+
+@app.get("/api/threads", response_model=list[ThreadInfo])
+async def threads() -> list[ThreadInfo]:
+    return await run_in_threadpool(list_threads)
+
+
+@app.get("/api/threads/{thread_id}", response_model=list[TranscriptTurn])
+async def thread_transcript(thread_id: str) -> list[TranscriptTurn]:
+    turns = await get_transcript(thread_id)
+    if turns is None:
+        raise HTTPException(status_code=404, detail="unknown thread")
+    return turns
+
+
+@app.delete("/api/threads/{thread_id}")
+async def remove_thread(thread_id: str) -> dict:
+    await run_in_threadpool(delete_thread, thread_id)
+    return {"deleted": thread_id}
 
 
 # Mounted last so /api/* wins routing; html=True serves index.html at /.

@@ -143,3 +143,26 @@ def test_chat_returns_citations(monkeypatch):
     with _client(monkeypatch) as client:
         resp = client.post("/api/chat", json={"message": "hi"})
     assert resp.json()["citations"] == ["1706.03762"]
+
+
+def test_thread_endpoints(monkeypatch, tmp_path):
+    import api.main as api_main
+    import api.threads as threads_mod
+    from agents.graph import AgentResult
+
+    monkeypatch.setattr(threads_mod.settings, "checkpoint_db", str(tmp_path / "cp.db"))
+
+    async def fake_run_chat(question, thread_id=None, provider=None):
+        return AgentResult(text="ok", citations=[])
+
+    monkeypatch.setattr(api_main, "run_chat", fake_run_chat)
+    with _client(monkeypatch) as client:
+        client.post("/api/chat", json={"message": "first message"})
+        rows = client.get("/api/threads").json()
+        assert len(rows) == 1
+        assert rows[0]["title"] == "first message"
+        tid = rows[0]["thread_id"]
+        # no checkpoint written (run_chat faked) → transcript 404
+        assert client.get(f"/api/threads/{tid}").status_code == 404
+        assert client.delete(f"/api/threads/{tid}").status_code == 200
+        assert client.get("/api/threads").json() == []
