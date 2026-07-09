@@ -23,7 +23,7 @@ from langgraph.graph import END, StateGraph
 
 from agents.mcp_client import MCPToolbox
 from config import settings
-from llm.base import generate
+from llm.base import generate, generate_stream
 from llm.prompts import AGENT_SYSTEM_PROMPT, SUMMARIZE_SYSTEM_PROMPT
 from rag.answer import answer_question
 
@@ -100,7 +100,7 @@ def _render_for_summary(messages: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def build_graph(toolbox, checkpointer=None, provider: str | None = None):
+def build_graph(toolbox, checkpointer=None, provider: str | None = None, on_event=None):
     tools = [RAG_QUERY_TOOL] + toolbox.list_tools()
 
     async def summarize_node(state: AgentState) -> dict:
@@ -114,6 +114,8 @@ def build_graph(toolbox, checkpointer=None, provider: str | None = None):
         prior = state.get("summary", "")
         prompt = (f"Previous summary:\n{prior}\n\n" if prior else "") + \
             "Conversation to compress:\n" + _render_for_summary(older)
+        if on_event is not None:
+            on_event({"event": "status", "text": "summarizing conversation…"})
         resp = await asyncio.to_thread(
             generate, [{"role": "user", "content": prompt}],
             system=SUMMARIZE_SYSTEM_PROMPT, provider=provider,
@@ -130,8 +132,17 @@ def build_graph(toolbox, checkpointer=None, provider: str | None = None):
         if state.get("summary"):
             system = (f"{AGENT_SYSTEM_PROMPT}\n\n"
                       f"Conversation so far (summarized):\n{state['summary']}")
-        resp = await asyncio.to_thread(generate, history, system=system, tools=tools,
-                                       provider=provider)
+        if on_event is None:
+            resp = await asyncio.to_thread(generate, history, system=system,
+                                           tools=tools, provider=provider)
+        else:
+            def _stream():
+                return generate_stream(
+                    history, system=system, tools=tools, provider=provider,
+                    on_delta=lambda t: on_event({"event": "delta", "text": t}),
+                )
+            resp = await asyncio.to_thread(_stream)
+            on_event({"event": "turn_end", "has_tools": bool(resp.tool_calls)})
         content: list[dict] = []
         if resp.text:
             content.append({"type": "text", "text": resp.text})
@@ -148,6 +159,8 @@ def build_graph(toolbox, checkpointer=None, provider: str | None = None):
             if block["type"] != "tool_use":
                 continue
             name, args = block["name"], block["input"]
+            if on_event is not None:
+                on_event({"event": "status", "text": f"calling {name}…"})
             logger.info("Tool call: %s(%s)", name, args)
             if name == "rag_query":
                 try:
@@ -203,14 +216,15 @@ def final_text(state: dict) -> str:
 
 
 async def run_agent(question: str, thread_id: str | None = None,
-                    provider: str | None = None) -> AgentResult:
+                    provider: str | None = None, on_event=None) -> AgentResult:
     """One agent turn. Same thread_id continues a conversation; omitted → fresh
     single-shot thread (direct callers like eval stay stateless)."""
     thread_id = thread_id or str(uuid.uuid4())
     Path(settings.checkpoint_db).parent.mkdir(parents=True, exist_ok=True)
     async with MCPToolbox() as toolbox, \
             AsyncSqliteSaver.from_conn_string(settings.checkpoint_db) as saver:
-        graph = build_graph(toolbox, checkpointer=saver, provider=provider)
+        graph = build_graph(toolbox, checkpointer=saver, provider=provider,
+                            on_event=on_event)
         state = await graph.ainvoke(
             {"messages": [{"role": "user", "content": question}], "steps": 0,
              "citations": []},

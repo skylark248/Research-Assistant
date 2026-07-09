@@ -285,3 +285,35 @@ def test_dedupe_preserves_order():
     from agents.graph import _dedupe
 
     assert _dedupe(["b", "a", "b", "c", "a"]) == ["b", "a", "c"]
+
+
+async def test_on_event_streams_deltas_and_statuses(monkeypatch):
+    import agents.graph as graph_mod
+    from rag.answer import RagAnswer
+
+    monkeypatch.setattr(graph_mod, "answer_question",
+                        lambda q: RagAnswer(text="A.", sources=["1706.03762"]))
+    script = [
+        LLMResponse(tool_calls=[ToolCall(id="tu_1", name="rag_query",
+                                         input={"question": "q"})]),
+        LLMResponse(text="Final answer."),
+    ]
+
+    def fake_generate_stream(messages, **kwargs):
+        resp = script.pop(0)
+        for piece in (resp.text[:3], resp.text[3:]):
+            if piece:
+                kwargs["on_delta"](piece)
+        return resp
+
+    monkeypatch.setattr(graph_mod, "generate_stream", fake_generate_stream)
+    events = []
+    graph = graph_mod.build_graph(FakeToolbox(), on_event=events.append)
+    await graph.ainvoke({"messages": [{"role": "user", "content": "q"}],
+                         "steps": 0, "citations": []})
+    kinds = [e["event"] for e in events]
+    assert kinds == ["turn_end", "status", "delta", "delta", "turn_end"]
+    assert events[0]["has_tools"] is True          # tool-reasoning turn
+    assert "rag_query" in events[1]["text"]        # status line
+    assert events[-1]["has_tools"] is False        # final answer turn
+    assert "".join(e["text"] for e in events if e["event"] == "delta") == "Final answer."

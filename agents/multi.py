@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from agents.graph import AgentResult, _dedupe, run_agent
 from config import settings
-from llm.base import generate
+from llm.base import generate, generate_stream
 from llm.prompts import PLANNER_SYSTEM_PROMPT, SYNTHESIZER_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -34,36 +34,50 @@ def _plan(question: str, provider: str | None = None) -> Plan:
 
 
 def _synthesize(question: str, findings: list[tuple[str, str]],
-                provider: str | None = None) -> str:
+                provider: str | None = None, on_delta=None) -> str:
     parts = [f"Sub-question: {sq}\nFinding: {answer}" for sq, answer in findings]
     content = f"Question: {question}\n\n" + "\n\n---\n\n".join(parts)
-    resp = generate([{"role": "user", "content": content}],
-                    system=SYNTHESIZER_SYSTEM_PROMPT, provider=provider)
+    messages = [{"role": "user", "content": content}]
+    if on_delta is None:
+        resp = generate(messages, system=SYNTHESIZER_SYSTEM_PROMPT, provider=provider)
+    else:
+        resp = generate_stream(messages, system=SYNTHESIZER_SYSTEM_PROMPT,
+                               provider=provider, on_delta=on_delta)
     return resp.text
 
 
 async def run_multi_agent(question: str, thread_id: str | None = None,
-                          provider: str | None = None) -> AgentResult:
+                          provider: str | None = None, on_event=None) -> AgentResult:
+    if on_event is not None:
+        on_event({"event": "status", "text": "planning…"})
     plan = await asyncio.to_thread(_plan, question, provider)
     if plan.simple or not plan.sub_questions:
-        return await run_agent(question, thread_id, provider=provider)
+        return await run_agent(question, thread_id, provider=provider,
+                               on_event=on_event)
     findings: list[tuple[str, str]] = []
     citations: list[str] = []
     for sub_question in plan.sub_questions[:4]:
+        if on_event is not None:
+            on_event({"event": "status", "text": f"researching: {sub_question}"})
         try:
+            # researchers run silently — only the synthesizer token-streams
             result = await run_agent(sub_question, provider=provider)
             findings.append((sub_question, result.text))
             citations.extend(result.citations)
         except Exception as exc:
             logger.exception("Researcher failed for %r", sub_question)
             findings.append((sub_question, f"FAILED: {exc}"))
-    text = await asyncio.to_thread(_synthesize, question, findings, provider)
+    on_delta = (lambda t: on_event({"event": "delta", "text": t})) if on_event else None
+    text = await asyncio.to_thread(_synthesize, question, findings, provider, on_delta)
+    if on_event is not None:
+        on_event({"event": "turn_end", "has_tools": False})
     return AgentResult(text=text, citations=_dedupe(citations))
 
 
 async def run_chat(message: str, thread_id: str | None = None,
-                   provider: str | None = None) -> AgentResult:
+                   provider: str | None = None, on_event=None) -> AgentResult:
     """Dispatch on agent_mode: the single loop (default) or the supervisor."""
     if settings.agent_mode == "multi":
-        return await run_multi_agent(message, thread_id, provider=provider)
-    return await run_agent(message, thread_id, provider=provider)
+        return await run_multi_agent(message, thread_id, provider=provider,
+                                     on_event=on_event)
+    return await run_agent(message, thread_id, provider=provider, on_event=on_event)

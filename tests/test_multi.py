@@ -23,7 +23,7 @@ async def test_simple_question_falls_through_to_single_agent(monkeypatch):
 
     _patch_plan(monkeypatch, multi_mod.Plan(simple=True))
 
-    async def fake_run_agent(question, thread_id=None, provider=None):
+    async def fake_run_agent(question, thread_id=None, provider=None, on_event=None):
         return AgentResult(text=f"single: {question} [{thread_id}]", citations=["1706.03762"])
 
     monkeypatch.setattr(multi_mod, "run_agent", fake_run_agent)
@@ -81,10 +81,10 @@ async def test_run_chat_dispatches_on_agent_mode(monkeypatch):
     from agents.graph import AgentResult
     from config import settings
 
-    async def fake_single(question, thread_id=None, provider=None):
+    async def fake_single(question, thread_id=None, provider=None, on_event=None):
         return AgentResult(text="single", citations=[])
 
-    async def fake_multi(question, thread_id=None, provider=None):
+    async def fake_multi(question, thread_id=None, provider=None, on_event=None):
         return AgentResult(text="multi", citations=[])
 
     monkeypatch.setattr(multi_mod, "run_agent", fake_single)
@@ -145,3 +145,30 @@ async def test_multi_unions_researcher_citations(monkeypatch):
     result = await multi_mod.run_multi_agent("big question")
     assert result.text == "synthesis"
     assert result.citations == ["1706.03762", "2105.02723"]
+
+
+async def test_multi_emits_statuses_and_streams_synthesis(monkeypatch):
+    import agents.multi as multi_mod
+    from agents.graph import AgentResult
+    from llm.base import LLMResponse
+
+    def fake_generate(messages, **kwargs):
+        return LLMResponse(parsed=multi_mod.Plan(simple=False, sub_questions=["a"]))
+
+    def fake_generate_stream(messages, **kwargs):
+        kwargs["on_delta"]("synth")
+        return LLMResponse(text="synth")
+
+    async def fake_run_agent(question, thread_id=None, provider=None, on_event=None):
+        return AgentResult(text="ans", citations=[])
+
+    monkeypatch.setattr(multi_mod, "generate", fake_generate)
+    monkeypatch.setattr(multi_mod, "generate_stream", fake_generate_stream)
+    monkeypatch.setattr(multi_mod, "run_agent", fake_run_agent)
+    events = []
+    result = await multi_mod.run_multi_agent("q", on_event=events.append)
+    assert result.text == "synth"
+    kinds = [e["event"] for e in events]
+    assert kinds == ["status", "status", "delta", "turn_end"]
+    assert events[0]["text"] == "planning…"
+    assert events[1]["text"] == "researching: a"

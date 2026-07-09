@@ -1,9 +1,13 @@
+import asyncio
+import json
+import logging
 import uuid
 from contextlib import asynccontextmanager
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -13,6 +17,8 @@ from api.threads import (ThreadInfo, TranscriptTurn, delete_thread, get_transcri
                          list_threads, upsert_thread)
 from rag.ingest import IngestResult, ingest_query
 from rag.store import VectorStore
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -59,6 +65,42 @@ async def chat(req: ChatRequest) -> ChatResponse:
     await run_in_threadpool(upsert_thread, thread_id, req.message)
     return ChatResponse(reply=result.text, thread_id=thread_id,
                         citations=result.citations)
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(req: ChatRequest) -> StreamingResponse:
+    """SSE: status/delta/turn_end events while the agent works, then done|error."""
+    await _require_available(req.provider)
+    thread_id = req.thread_id or str(uuid.uuid4())
+    queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    def on_event(event: dict) -> None:
+        # Called from worker threads (generate_stream runs in to_thread).
+        loop.call_soon_threadsafe(queue.put_nowait, event)
+
+    async def worker() -> None:
+        try:
+            result = await run_chat(req.message, thread_id,
+                                    provider=req.provider, on_event=on_event)
+            await run_in_threadpool(upsert_thread, thread_id, req.message)
+            await queue.put({"event": "done", "reply": result.text,
+                             "thread_id": thread_id, "citations": result.citations})
+        except Exception as exc:
+            logger.exception("chat stream failed")
+            await queue.put({"event": "error", "message": str(exc)})
+        await queue.put(None)  # sentinel: stream complete
+
+    async def sse():
+        task = asyncio.create_task(worker())
+        try:
+            while (event := await queue.get()) is not None:
+                name = event.pop("event")
+                yield f"event: {name}\ndata: {json.dumps(event)}\n\n"
+        finally:
+            await task
+
+    return StreamingResponse(sse(), media_type="text/event-stream")
 
 
 @app.post("/api/ingest", response_model=IngestResult)
