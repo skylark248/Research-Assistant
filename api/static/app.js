@@ -15,6 +15,10 @@ function el(tag, cls, text) {
 function scrollLog() { log.scrollTop = log.scrollHeight; }
 
 function renderMarkdown(node, text) {
+  if (typeof window.marked === "undefined" || typeof window.DOMPurify === "undefined") {
+    node.textContent = text;
+    return;
+  }
   node.innerHTML = DOMPurify.sanitize(marked.parse(text));
 }
 
@@ -95,7 +99,11 @@ function parseSSE(buffer, onEvent) {
   return tail;
 }
 
+let inFlight = false; // guards against a second send starting a parallel thread mid-stream
+
 async function sendMessage() {
+  if (inFlight) return;
+
   const input = document.getElementById("chat-input");
   const message = input.value.trim();
   if (!message) return;
@@ -109,6 +117,11 @@ async function sendMessage() {
 
   const body = { message, provider: providerSelect.value || null };
   if (threadId) body.thread_id = threadId;
+
+  inFlight = true;
+  const sendBtn = document.getElementById("chat-btn");
+  sendBtn.disabled = true;
+  input.disabled = true;
 
   try {
     const resp = await fetch("/api/chat/stream", {
@@ -160,6 +173,10 @@ async function sendMessage() {
     thinking.remove();
     pending.remove();
     addStatus(`Chat failed: ${err.message}`);
+  } finally {
+    inFlight = false;
+    sendBtn.disabled = false;
+    input.disabled = false;
   }
 }
 
@@ -190,7 +207,10 @@ async function loadThreads() {
 
 async function openThread(id) {
   const resp = await fetch(`/api/threads/${id}`);
-  if (!resp.ok) return;
+  if (!resp.ok) {
+    addStatus("No transcript available for this thread.");
+    return;
+  }
   const turns = await resp.json();
   threadId = id;
   log.replaceChildren();
