@@ -35,3 +35,19 @@ def generate_local(
         messages, system=system, tools=tools, structured_schema=structured_schema,
         max_tokens=max_tokens, client=_get_client(), model=settings.local_model,
     )
+
+
+def generate_local_stream(
+    messages: list[dict],
+    *,
+    system: str | list[dict] | None = None,
+    tools: list[dict] | None = None,
+    max_tokens: int = 4096,
+    on_delta,
+) -> LLMResponse:
+    from llm.openai_client import generate_openai_stream
+
+    return generate_openai_stream(
+        messages, system=system, tools=tools, max_tokens=max_tokens,
+        on_delta=on_delta, client=_get_client(), model=settings.local_model,
+    )

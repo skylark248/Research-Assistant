@@ -64,3 +64,33 @@ def _to_llm_response(response, structured_schema=None) -> LLMResponse:
         stop_reason=response.stop_reason,
         usage=usage,
     )
+
+
+def generate_anthropic_stream(
+    messages: list[dict],
+    *,
+    system: str | list[dict] | None = None,
+    tools: list[dict] | None = None,
+    max_tokens: int = 4096,
+    on_delta,
+) -> LLMResponse:
+    """Streaming variant: on_delta(str) per text chunk, returns the full response.
+
+    tool_use blocks are accumulated by the SDK and arrive only on the final
+    message — never through on_delta.
+    """
+    client = _get_client()
+    kwargs: dict = {
+        "model": settings.anthropic_model,
+        "max_tokens": max_tokens,
+        "messages": messages,
+    }
+    if system is not None:
+        kwargs["system"] = system
+    if tools:
+        kwargs["tools"] = tools
+    with client.messages.stream(**kwargs) as stream:
+        for text in stream.text_stream:
+            on_delta(text)
+        response = stream.get_final_message()
+    return _to_llm_response(response)

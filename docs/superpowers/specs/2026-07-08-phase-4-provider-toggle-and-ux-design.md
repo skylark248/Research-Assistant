@@ -62,9 +62,7 @@ One mechanism serves both "activity" and "token" streaming.
 
 ### `generate_stream()` in all three clients
 
-- Same signature as `generate()` plus it is a generator: yields text deltas
-  (strings) as they arrive, then returns the final `LLMResponse` (tool_calls
-  accumulated internally, never exposed as deltas).
+- Same signature as `generate()` plus it takes an `on_delta(str)` callback invoked per text chunk and returns the final `LLMResponse` (callback-style survives `asyncio.to_thread`; a generator would not).
 - Anthropic: `client.messages.stream(...)`. OpenAI + local: shared
   chat-completions path with `stream=True` (local client already speaks the
   OpenAI protocol).

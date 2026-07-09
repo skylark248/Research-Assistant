@@ -100,3 +100,57 @@ def generate_openai(
     ]
     return LLMResponse(text=choice.message.content or "", tool_calls=tool_calls,
                        stop_reason=choice.finish_reason, usage=_usage(completion))
+
+
+def generate_openai_stream(
+    messages: list[dict],
+    *,
+    system: str | list[dict] | None = None,
+    tools: list[dict] | None = None,
+    max_tokens: int = 4096,
+    on_delta,
+    client=None,
+    model: str | None = None,
+) -> LLMResponse:
+    """Streaming variant: on_delta(str) per text chunk, returns the full response.
+
+    Tool-call fragments are accumulated internally (never sent to on_delta);
+    streamed chunks carry no usage, so usage stays {}.
+    """
+    client = client or _get_client()
+    kwargs: dict = {
+        "model": model or settings.openai_model,
+        "messages": convert_messages(messages, system),
+        "max_completion_tokens": max_tokens,
+        "stream": True,
+    }
+    if tools:
+        kwargs["tools"] = convert_tools(tools)
+    text_parts: list[str] = []
+    acc: dict[int, dict] = {}  # index -> {"id", "name", "arguments"}
+    finish_reason = None
+    for chunk in client.chat.completions.create(**kwargs):
+        if not chunk.choices:
+            continue
+        choice = chunk.choices[0]
+        delta = choice.delta
+        if delta.content:
+            text_parts.append(delta.content)
+            on_delta(delta.content)
+        for tc in (delta.tool_calls or []):
+            slot = acc.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
+            if tc.id:
+                slot["id"] = tc.id
+            if tc.function and tc.function.name:
+                slot["name"] = tc.function.name
+            if tc.function and tc.function.arguments:
+                slot["arguments"] += tc.function.arguments
+        if choice.finish_reason:
+            finish_reason = choice.finish_reason
+    tool_calls = [
+        ToolCall(id=slot["id"], name=slot["name"],
+                 input=json.loads(slot["arguments"] or "{}"))
+        for _, slot in sorted(acc.items())
+    ]
+    return LLMResponse(text="".join(text_parts), tool_calls=tool_calls,
+                       stop_reason=finish_reason)

@@ -58,3 +58,41 @@ def generate(
             structured_schema=structured_schema, max_tokens=max_tokens,
         )
     raise ValueError(f"Unknown provider: {provider}")
+
+
+def generate_stream(
+    messages: list[dict],
+    *,
+    system: str | list[dict] | None = None,
+    tools: list[dict] | None = None,
+    on_delta,
+    provider: str | None = None,
+    max_tokens: int | None = None,
+) -> LLMResponse:
+    """Streaming variant of generate(): on_delta(str) fires per text chunk,
+    the complete LLMResponse (with tool_calls) is returned at the end.
+    No structured_schema — structured calls stay on generate()."""
+    provider = provider or settings.llm_provider
+    max_tokens = max_tokens or settings.llm_max_tokens
+    if provider == "anthropic":
+        import llm.anthropic_client as anthropic_client
+
+        return anthropic_client.generate_anthropic_stream(
+            messages, system=system, tools=tools, max_tokens=max_tokens,
+            on_delta=on_delta,
+        )
+    if provider == "openai":
+        import llm.openai_client as openai_client
+
+        return openai_client.generate_openai_stream(
+            messages, system=system, tools=tools, max_tokens=max_tokens,
+            on_delta=on_delta,
+        )
+    if provider == "local":
+        import llm.local_client as local_client
+
+        return local_client.generate_local_stream(
+            messages, system=system, tools=tools, max_tokens=max_tokens,
+            on_delta=on_delta,
+        )
+    raise ValueError(f"Unknown provider: {provider}")
