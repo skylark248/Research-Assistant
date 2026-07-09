@@ -4,36 +4,65 @@
   <meta charset="utf-8">
   <title>Paper Research Assistant</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
-    h1 { font-size: 1.4rem; }
-    fieldset { margin-bottom: 1.5rem; border: 1px solid #ccc; border-radius: 6px; }
-    input[type=text] { width: 70%; padding: .5rem; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; display: flex; height: 100vh; }
+    #sidebar { width: 260px; border-right: 1px solid #ddd; padding: 1rem; overflow-y: auto; flex-shrink: 0; }
+    #sidebar h2 { font-size: .9rem; text-transform: uppercase; color: #777; margin: 0 0 .5rem; }
+    .thread { display: flex; align-items: center; gap: .3rem; padding: .35rem .5rem; border-radius: 6px; cursor: pointer; font-size: .85rem; }
+    .thread:hover { background: #f0f0f0; }
+    .thread.active { background: #e6ecff; }
+    .thread .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .thread .del { border: none; background: none; color: #999; cursor: pointer; }
+    .thread .del:hover { color: #c00; }
+    #main { flex: 1; display: flex; flex-direction: column; max-width: 860px; margin: 0 auto; padding: 1rem; min-width: 0; }
+    h1 { font-size: 1.3rem; margin: 0 0 1rem; }
+    fieldset { border: 1px solid #ccc; border-radius: 6px; margin-bottom: 1rem; }
+    input[type=text] { padding: .5rem; }
     button { padding: .5rem 1rem; }
-    #log { border: 1px solid #ccc; border-radius: 6px; padding: 1rem; min-height: 200px; white-space: pre-wrap; }
-    .user { color: #005; font-weight: 600; }
-    .bot { color: #050; }
-    .status { color: #777; font-style: italic; }
+    #log { flex: 1; overflow-y: auto; border: 1px solid #ccc; border-radius: 6px; padding: 1rem; }
+    .user { color: #003; background: #eef2ff; border-radius: 8px; padding: .5rem .75rem; margin: .5rem 0; }
+    .bot { color: #030; background: #f2fff2; border-radius: 8px; padding: .5rem .75rem; margin: .5rem 0; }
+    .bot p:first-child { margin-top: 0; }
+    .bot p:last-child { margin-bottom: 0; }
+    .status { color: #888; font-style: italic; font-size: .85rem; margin: .2rem 0; }
+    .activity { color: #999; font-size: .8rem; margin: .15rem 0 .15rem 1rem; }
+    .citations { margin: .25rem 0 .75rem; }
+    .citations a { display: inline-block; font-size: .75rem; background: #eee; border-radius: 10px; padding: .1rem .5rem; margin-right: .3rem; color: #336; text-decoration: none; }
+    .citations a:hover { background: #ddd; }
+    #chat-row { display: flex; gap: .5rem; margin-top: 1rem; }
+    #chat-input { flex: 1; }
+    #provider { padding: .4rem; }
+    #ingest-row input { width: 60%; }
   </style>
 </head>
 <body>
-  <h1>Paper Research Assistant</h1>
+  <nav id="sidebar">
+    <button id="new-conv-btn" style="width:100%; margin-bottom:1rem;">+ New conversation</button>
+    <h2>Threads</h2>
+    <div id="thread-list"></div>
+  </nav>
 
-  <fieldset>
-    <legend>Ingest papers</legend>
-    <input id="ingest-query" type="text" placeholder="arXiv search, e.g. attention is all you need">
-    <button id="ingest-btn">Ingest</button>
-    <div id="ingest-status" class="status"></div>
-  </fieldset>
+  <main id="main">
+    <h1>Paper Research Assistant</h1>
 
-  <fieldset>
-    <legend>Chat</legend>
-    <input id="chat-input" type="text" placeholder="Ask about the ingested papers…">
-    <button id="chat-btn">Send</button>
-    <button id="new-conv-btn" title="Forget this conversation and start fresh">New conversation</button>
-  </fieldset>
+    <fieldset id="ingest-row">
+      <legend>Ingest papers</legend>
+      <input id="ingest-query" type="text" placeholder="arXiv search, e.g. attention is all you need">
+      <button id="ingest-btn">Ingest</button>
+      <div id="ingest-status" class="status"></div>
+    </fieldset>
 
-  <div id="log"></div>
+    <div id="log"></div>
 
+    <div id="chat-row">
+      <input id="chat-input" type="text" placeholder="Ask about the ingested papers…">
+      <select id="provider" title="Reasoning model"></select>
+      <button id="chat-btn">Send</button>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
