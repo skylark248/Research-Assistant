@@ -31,9 +31,11 @@ receive it, and the frontend has no control for it.
   - `run_multi_agent(question, thread_id, provider)` → `_plan(question,
     provider)` and `_synthesize(question, findings, provider)`; researchers
     reuse `run_agent(..., provider)`.
-- `rag/rewrite.py` keeps reading the global setting: `rewrite_enabled` is off
-  by default and the rewrite runs inside the RAG pipeline, several layers
-  below the agent. Not worth threading a parameter through `answer_question`.
+- `rag_query`'s answer generation receives the per-request provider, threaded
+  through `answer_question(question, store, provider)` into its `generate()`
+  call. Only `rag/rewrite.py` stays on the global setting: `rewrite_enabled`
+  is off by default and the rewrite runs inside the RAG pipeline, several
+  layers below the agent — not worth threading a parameter through.
 - Invalid provider strings are rejected with 422 by the `Literal` type.
 
 ## 2. Provider status — `GET /api/providers`
@@ -126,7 +128,8 @@ Events, in order of appearance during a request:
 
 ## 6. Frontend
 
-Stays vanilla JS, no build step. `marked` + `DOMPurify` from CDN.
+Stays vanilla JS, no build step. `marked` + `DOMPurify` vendored under
+`api/static/vendor/` (no build step, works offline).
 
 - Sidebar: thread list (title + relative time), click to load transcript,
   delete button per thread, "New conversation" on top.

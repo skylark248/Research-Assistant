@@ -130,6 +130,25 @@ def test_answer_question_builds_grounded_prompt(monkeypatch):
     assert "what is attention?" in captured["messages"][-1]["content"]
 
 
+def test_answer_question_threads_provider_to_generate(monkeypatch):
+    import rag.answer as answer_mod
+    from llm.base import LLMResponse
+
+    monkeypatch.setattr(answer_mod, "retrieve", lambda q, store=None: [_chunk()])
+    captured = {}
+
+    def fake_generate(messages, **kwargs):
+        captured.update(kwargs)
+        return LLMResponse(text="Self-attention is key [1706.03762].",
+                           usage={"cache_read_input_tokens": 0})
+
+    monkeypatch.setattr(answer_mod, "generate", fake_generate)
+
+    answer_mod.answer_question("what is attention?", provider="local")
+
+    assert captured["provider"] == "local"
+
+
 def test_answer_question_empty_store(monkeypatch):
     import rag.answer as answer_mod
 

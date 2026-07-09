@@ -12,6 +12,7 @@ fires — costs some tokens, keeps the bookkeeping trivial.
 """
 
 import asyncio
+import functools
 import logging
 import operator
 import uuid
@@ -164,7 +165,9 @@ def build_graph(toolbox, checkpointer=None, provider: str | None = None, on_even
             logger.info("Tool call: %s(%s)", name, args)
             if name == "rag_query":
                 try:
-                    ans = await asyncio.to_thread(answer_question, args["question"])
+                    ans = await asyncio.to_thread(
+                        functools.partial(answer_question, args["question"],
+                                          provider=provider))
                     content = f"{ans.text}\n\nSources: {', '.join(ans.sources) or 'none'}"
                     is_error = False
                     sources.extend(ans.sources)

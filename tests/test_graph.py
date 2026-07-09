@@ -49,8 +49,8 @@ async def test_rag_query_tool_loop(monkeypatch):
     from rag.answer import RagAnswer
 
     monkeypatch.setattr(graph_mod, "answer_question",
-                        lambda q: RagAnswer(text="Attention [1706.03762].",
-                                            sources=["1706.03762"]))
+                        lambda q, store=None, provider=None: RagAnswer(
+                            text="Attention [1706.03762].", sources=["1706.03762"]))
     seen = _scripted_generate(monkeypatch, [
         LLMResponse(tool_calls=[ToolCall(id="tu_1", name="rag_query",
                                          input={"question": "what is attention?"})]),
@@ -106,7 +106,8 @@ async def test_loop_stops_at_max_steps(monkeypatch):
     seen = _scripted_generate(monkeypatch, endless)
     from rag.answer import RagAnswer
     monkeypatch.setattr(graph_mod, "answer_question",
-                        lambda q: RagAnswer(text="partial", sources=[]))
+                        lambda q, store=None, provider=None: RagAnswer(
+                            text="partial", sources=[]))
 
     graph = graph_mod.build_graph(FakeToolbox())
     await graph.ainvoke({"messages": [{"role": "user", "content": "q"}], "steps": 0})
@@ -128,7 +129,8 @@ async def test_run_agent_falls_back_when_step_limit_hit(monkeypatch, tmp_path):
     ]
     _scripted_generate(monkeypatch, endless)
     monkeypatch.setattr(graph_mod, "answer_question",
-                        lambda q: RagAnswer(text="partial", sources=[]))
+                        lambda q, store=None, provider=None: RagAnswer(
+                            text="partial", sources=[]))
 
     class FakeToolboxCM:
         async def __aenter__(self):
@@ -263,13 +265,37 @@ async def test_provider_threads_to_generate(monkeypatch):
     assert seen[0]["provider"] == "local"
 
 
+async def test_provider_threads_to_answer_question(monkeypatch):
+    """Fix 1: the per-request provider passed to build_graph must reach
+    answer_question when the agent invokes the rag_query tool."""
+    import agents.graph as graph_mod
+    from rag.answer import RagAnswer
+
+    captured = {}
+
+    def fake_answer_question(q, store=None, provider=None):
+        captured["provider"] = provider
+        return RagAnswer(text="Attention [1706.03762].", sources=["1706.03762"])
+
+    monkeypatch.setattr(graph_mod, "answer_question", fake_answer_question)
+    _scripted_generate(monkeypatch, [
+        LLMResponse(tool_calls=[ToolCall(id="tu_1", name="rag_query",
+                                         input={"question": "what is attention?"})]),
+        LLMResponse(text="It is attention [1706.03762]."),
+    ])
+    graph = graph_mod.build_graph(FakeToolbox(), provider="local")
+    await graph.ainvoke({"messages": [{"role": "user", "content": "q"}], "steps": 0})
+
+    assert captured["provider"] == "local"
+
+
 async def test_citations_collected_from_rag_query(monkeypatch):
     import agents.graph as graph_mod
     from rag.answer import RagAnswer
 
     monkeypatch.setattr(graph_mod, "answer_question",
-                        lambda q: RagAnswer(text="Attention [1706.03762].",
-                                            sources=["1706.03762"]))
+                        lambda q, store=None, provider=None: RagAnswer(
+                            text="Attention [1706.03762].", sources=["1706.03762"]))
     _scripted_generate(monkeypatch, [
         LLMResponse(tool_calls=[ToolCall(id="tu_1", name="rag_query",
                                          input={"question": "what is attention?"})]),
@@ -292,7 +318,8 @@ async def test_on_event_streams_deltas_and_statuses(monkeypatch):
     from rag.answer import RagAnswer
 
     monkeypatch.setattr(graph_mod, "answer_question",
-                        lambda q: RagAnswer(text="A.", sources=["1706.03762"]))
+                        lambda q, store=None, provider=None: RagAnswer(
+                            text="A.", sources=["1706.03762"]))
     script = [
         LLMResponse(tool_calls=[ToolCall(id="tu_1", name="rag_query",
                                          input={"question": "q"})]),

@@ -15,8 +15,14 @@ class RagAnswer(BaseModel):
     sources: list[str]
 
 
-def answer_question(question: str, store: VectorStore | None = None) -> RagAnswer:
-    """RAG query flow: embed → retrieve → grounded prompt → generate."""
+def answer_question(
+    question: str, store: VectorStore | None = None, provider: str | None = None
+) -> RagAnswer:
+    """RAG query flow: embed → retrieve → grounded prompt → generate.
+
+    `provider` threads through to the generate call only — retrieval and the
+    query-rewrite path (rag/rewrite.py) stay on the global setting.
+    """
     chunks = retrieve(question, store=store)
     if not chunks:
         return RagAnswer(
@@ -26,7 +32,7 @@ def answer_question(question: str, store: VectorStore | None = None) -> RagAnswe
         )
     contexts = [{"paper_id": c.paper_id, "title": c.title, "text": c.text} for c in chunks]
     system, messages = build_rag_prompt(question, contexts)
-    resp = generate(messages, system=system)
+    resp = generate(messages, system=system, provider=provider)
     logger.info(
         "answer usage: cache_read=%s cache_creation=%s",
         resp.usage.get("cache_read_input_tokens"),
