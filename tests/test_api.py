@@ -1,3 +1,14 @@
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _isolated_checkpoint_db(monkeypatch, tmp_path):
+    """Chat endpoint upserts thread rows; keep unit runs out of data/checkpoints.db."""
+    import api.threads as threads_mod
+
+    monkeypatch.setattr(threads_mod.settings, "checkpoint_db", str(tmp_path / "cp.db"))
+
+
 def _client(monkeypatch):
     import api.main as api_main
     from fastapi.testclient import TestClient
@@ -145,12 +156,9 @@ def test_chat_returns_citations(monkeypatch):
     assert resp.json()["citations"] == ["1706.03762"]
 
 
-def test_thread_endpoints(monkeypatch, tmp_path):
+def test_thread_endpoints(monkeypatch):
     import api.main as api_main
-    import api.threads as threads_mod
     from agents.graph import AgentResult
-
-    monkeypatch.setattr(threads_mod.settings, "checkpoint_db", str(tmp_path / "cp.db"))
 
     async def fake_run_chat(question, thread_id=None, provider=None):
         return AgentResult(text="ok", citations=[])
