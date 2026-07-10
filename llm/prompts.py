@@ -87,3 +87,11 @@ You get a question and findings for its sub-questions, each carrying [paper_id]
 citations. Compose a single coherent answer, keep every citation next to the
 claim it supports, and never invent paper ids. If a finding says FAILED, work
 with the remaining findings and state what is missing."""
+
+GRADE_SYSTEM_PROMPT = """You judge whether paper excerpts are relevant to a question.
+
+You get a question and numbered excerpts. For EACH excerpt output exactly one line:
+<number>: yes    (the excerpt helps answer the question)
+<number>: no     (it does not)
+
+Output ONLY those lines, one per excerpt, in order. No other text."""
