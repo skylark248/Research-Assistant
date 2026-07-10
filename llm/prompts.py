@@ -95,3 +95,9 @@ You get a question and numbered excerpts. For EACH excerpt output exactly one li
 <number>: no     (it does not)
 
 Output ONLY those lines, one per excerpt, in order. No other text."""
+
+FAITHFULNESS_SYSTEM_PROMPT = """You verify that an answer is supported by paper excerpts.
+
+You get excerpts, a question, and an answer. Reply with exactly one word:
+yes — every claim in the answer is supported by the excerpts
+no — any claim lacks support or cites a paper the excerpts do not back"""
