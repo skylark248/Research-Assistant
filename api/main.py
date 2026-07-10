@@ -70,7 +70,8 @@ async def chat(req: ChatRequest) -> ChatResponse:
     await _require_available(req.provider)
     thread_id = req.thread_id or str(uuid.uuid4())
     result = await run_chat(req.message, thread_id, provider=req.provider)
-    await run_in_threadpool(upsert_thread, thread_id, req.message)
+    if result.checkpointed:  # decomposed multi plans have no restorable transcript
+        await run_in_threadpool(upsert_thread, thread_id, req.message)
     return ChatResponse(reply=result.text, thread_id=thread_id,
                         citations=result.citations)
 
@@ -91,7 +92,8 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
         try:
             result = await run_chat(req.message, thread_id,
                                     provider=req.provider, on_event=on_event)
-            await run_in_threadpool(upsert_thread, thread_id, req.message)
+            if result.checkpointed:  # decomposed multi plans have no restorable transcript
+                await run_in_threadpool(upsert_thread, thread_id, req.message)
             await queue.put({"event": "done", "reply": result.text,
                              "thread_id": thread_id, "citations": result.citations})
         except Exception as exc:

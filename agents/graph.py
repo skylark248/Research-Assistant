@@ -39,6 +39,9 @@ STEP_LIMIT_MESSAGE = (
 class AgentResult(NamedTuple):
     text: str
     citations: list[str]
+    # False when no checkpoint exists under the caller's thread_id (multi-mode
+    # decomposed plans) — the API skips thread registration in that case.
+    checkpointed: bool = True
 
 
 def _dedupe(items: list[str]) -> list[str]:

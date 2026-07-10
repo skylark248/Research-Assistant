@@ -71,7 +71,9 @@ async def run_multi_agent(question: str, thread_id: str | None = None,
     text = await asyncio.to_thread(_synthesize, question, findings, provider, on_delta)
     if on_event is not None:
         on_event({"event": "turn_end", "has_tools": False})
-    return AgentResult(text=text, citations=_dedupe(citations))
+    # Researchers ran on fresh single-shot threads; nothing was checkpointed
+    # under the caller's thread_id, so there is no transcript to restore.
+    return AgentResult(text=text, citations=_dedupe(citations), checkpointed=False)
 
 
 async def run_chat(message: str, thread_id: str | None = None,

@@ -147,16 +147,21 @@ async function sendMessage() {
           addActivity(data.text);
         } else if (name === "delta") {
           pendingText += data.text;
+          // keep the streaming bubble below any activity lines added since
+          if (pending !== log.lastChild) log.appendChild(pending);
           pending.textContent = pendingText;
           scrollLog();
         } else if (name === "turn_end") {
-          if (data.has_tools && pendingText) {
-            addActivity(pendingText); // tool-reasoning text → activity feed
+          if (data.has_tools) {
+            if (pendingText) addActivity(pendingText); // tool-reasoning text → activity feed
+            pendingText = "";
+            pending.textContent = "";
           }
-          pendingText = "";
-          pending.textContent = "";
+          // final turn (has_tools=false): leave streamed text in place;
+          // `done` re-renders it as markdown in the same bubble — no flicker
         } else if (name === "done") {
           threadId = data.thread_id;
+          if (pending !== log.lastChild) log.appendChild(pending); // e.g. no deltas streamed
           renderMarkdown(pending, data.reply); // authoritative full reply
           addCitations(data.citations);
           finished = true;

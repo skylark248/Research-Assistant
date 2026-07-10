@@ -174,3 +174,17 @@ def test_thread_endpoints(monkeypatch):
         assert client.get(f"/api/threads/{tid}").status_code == 404
         assert client.delete(f"/api/threads/{tid}").status_code == 200
         assert client.get("/api/threads").json() == []
+
+
+def test_chat_skips_thread_upsert_when_not_checkpointed(monkeypatch):
+    import api.main as api_main
+    from agents.graph import AgentResult
+
+    async def fake_run_chat(question, thread_id=None, provider=None):
+        return AgentResult(text="synth", citations=[], checkpointed=False)
+
+    monkeypatch.setattr(api_main, "run_chat", fake_run_chat)
+    with _client(monkeypatch) as client:
+        resp = client.post("/api/chat", json={"message": "decomposed multi question"})
+        assert resp.status_code == 200
+        assert client.get("/api/threads").json() == []

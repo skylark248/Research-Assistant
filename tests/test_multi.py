@@ -172,3 +172,39 @@ async def test_multi_emits_statuses_and_streams_synthesis(monkeypatch):
     assert kinds == ["status", "status", "delta", "turn_end"]
     assert events[0]["text"] == "planning…"
     assert events[1]["text"] == "researching: a"
+
+
+async def test_decomposed_plan_result_not_checkpointed(monkeypatch):
+    import agents.multi as multi_mod
+    from agents.graph import AgentResult
+    from llm.base import LLMResponse
+
+    def fake_generate(messages, **kwargs):
+        if kwargs.get("structured_schema") is not None:
+            return LLMResponse(parsed=multi_mod.Plan(simple=False, sub_questions=["a"]))
+        return LLMResponse(text="synthesis")
+
+    async def fake_run_agent(question, thread_id=None, provider=None, on_event=None):
+        return AgentResult(text="ans", citations=[])
+
+    monkeypatch.setattr(multi_mod, "generate", fake_generate)
+    monkeypatch.setattr(multi_mod, "run_agent", fake_run_agent)
+    result = await multi_mod.run_multi_agent("big question")
+    assert result.checkpointed is False
+
+
+async def test_simple_plan_result_stays_checkpointed(monkeypatch):
+    import agents.multi as multi_mod
+    from agents.graph import AgentResult
+    from llm.base import LLMResponse
+
+    def fake_generate(messages, **kwargs):
+        return LLMResponse(parsed=multi_mod.Plan(simple=True))
+
+    async def fake_run_agent(question, thread_id=None, provider=None, on_event=None):
+        return AgentResult(text="direct", citations=[])
+
+    monkeypatch.setattr(multi_mod, "generate", fake_generate)
+    monkeypatch.setattr(multi_mod, "run_agent", fake_run_agent)
+    result = await multi_mod.run_multi_agent("simple question")
+    assert result.checkpointed is True
