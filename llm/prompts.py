@@ -101,3 +101,7 @@ FAITHFULNESS_SYSTEM_PROMPT = """You verify that an answer is supported by paper 
 You get excerpts, a question, and an answer. Reply with exactly one word:
 yes — every claim in the answer is supported by the excerpts
 no — any claim lacks support or cites a paper the excerpts do not back"""
+
+RETRY_REWRITE_SYSTEM_PROMPT = """A vector-database search over research papers found no relevant excerpts for the user's question.
+
+Write ONE alternative search query that might match better: use synonyms, expand acronyms, or generalize overly specific phrasing. Return only the query."""
