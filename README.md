@@ -4,6 +4,20 @@ Learning project covering LLM APIs + prompting, RAG, evaluation, and agents + MC
 Ingests arXiv papers, answers questions grounded in them with [paper_id] citations,
 and autonomously fetches papers it doesn't have yet.
 
+## Status: complete (all 4 phases shipped)
+
+| Phase | Delivered |
+|-------|-----------|
+| 1 | Core RAG pipeline (ingest → chunk → embed → Qdrant → cited answers), LangGraph agent + MCP tools, eval harness, web UI |
+| 2 | Hybrid retrieval (BM25 + dense + RRF), cross-encoder reranking, query rewriting, agent memory (summarization), multi-agent supervisor, retrieval ablation |
+| 3 | Fully local, no-keys operation via Ollama (`qwen2.5:3b`) + local embeddings; live-validated end to end |
+| 4 | Per-request provider toggle in the UI, provider availability checks, SSE streaming (activity + tokens), citation chips, persistent thread sidebar |
+
+Design specs and implementation plans for each phase live in
+`docs/superpowers/specs/` and `docs/superpowers/plans/`. Known limitation:
+the 3B local model occasionally fumbles the agent tool-call loop — use
+`LOCAL_MODEL=qwen2.5:7b` if you have the RAM (see notes below).
+
 ## Setup
 
 ```bash
