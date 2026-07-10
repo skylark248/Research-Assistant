@@ -216,7 +216,7 @@ async function openThread(id) {
   log.replaceChildren();
   for (const turn of turns) {
     if (turn.role === "user") addUser(turn.text);
-    else addBotMarkdown(turn.text, []);
+    else addBotMarkdown(turn.text, turn.citations || []);
   }
   loadThreads(); // refresh active highlight
 }

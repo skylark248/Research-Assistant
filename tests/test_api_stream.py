@@ -55,3 +55,19 @@ def test_chat_stream_error_event(monkeypatch):
             body = "".join(resp.iter_text())
     assert "event: error" in body
     assert "provider exploded" in body
+
+
+def test_chat_stream_error_unwraps_exception_groups(monkeypatch):
+    import api.main as api_main
+
+    async def failing_run_chat(question, thread_id=None, provider=None, on_event=None):
+        inner = ExceptionGroup("nested", [RuntimeError("401 invalid x-api-key")])
+        raise ExceptionGroup("unhandled errors in a TaskGroup (1 sub-exception)", [inner])
+
+    monkeypatch.setattr(api_main, "run_chat", failing_run_chat)
+    with _client(monkeypatch) as client:
+        with client.stream("POST", "/api/chat/stream", json={"message": "hi"}) as resp:
+            body = "".join(resp.iter_text())
+    assert "event: error" in body
+    assert "401 invalid x-api-key" in body
+    assert "TaskGroup" not in body

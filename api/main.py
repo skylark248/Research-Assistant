@@ -49,6 +49,14 @@ class IngestRequest(BaseModel):
     max_results: int = 3
 
 
+def _root_error(exc: BaseException) -> BaseException:
+    """Innermost real exception — agent errors arrive wrapped in TaskGroup
+    ExceptionGroups whose str() ("unhandled errors in a TaskGroup") hides the cause."""
+    while isinstance(exc, BaseExceptionGroup) and exc.exceptions:
+        exc = exc.exceptions[0]
+    return exc
+
+
 async def _require_available(provider: str | None) -> None:
     if provider is None:
         return
@@ -88,7 +96,7 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
                              "thread_id": thread_id, "citations": result.citations})
         except Exception as exc:
             logger.exception("chat stream failed")
-            await queue.put({"event": "error", "message": str(exc)})
+            await queue.put({"event": "error", "message": str(_root_error(exc))})
         await queue.put(None)  # sentinel: stream complete
 
     async def sse():

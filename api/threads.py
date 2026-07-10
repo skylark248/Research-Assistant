@@ -26,6 +26,7 @@ class ThreadInfo(BaseModel):
 class TranscriptTurn(BaseModel):
     role: str  # "user" | "assistant"
     text: str
+    citations: list[str] = []  # populated on the last assistant turn only
 
 
 def _connect() -> sqlite3.Connection:
@@ -73,8 +74,13 @@ def delete_thread(thread_id: str) -> None:
                 pass  # table not created yet (no real chat has run)
 
 
-def _turns_from_messages(messages: list[dict]) -> list[TranscriptTurn]:
-    """Plain-text turns only; tool_use/tool_result traffic is omitted."""
+def _turns_from_messages(messages: list[dict],
+                         citations: list[str] | None = None) -> list[TranscriptTurn]:
+    """Plain-text turns only; tool_use/tool_result traffic is omitted.
+
+    The thread's accumulated citations attach to the last assistant turn —
+    same semantics as the live `done` event (whole-conversation sources).
+    """
     turns: list[TranscriptTurn] = []
     for message in messages:
         content = message["content"]
@@ -85,6 +91,11 @@ def _turns_from_messages(messages: list[dict]) -> list[TranscriptTurn]:
             texts = [b["text"] for b in content if b["type"] == "text"]
             if texts:
                 turns.append(TranscriptTurn(role="assistant", text="\n".join(texts)))
+    if citations:
+        for turn in reversed(turns):
+            if turn.role == "assistant":
+                turn.citations = list(dict.fromkeys(citations))
+                break
     return turns
 
 
@@ -94,4 +105,6 @@ async def get_transcript(thread_id: str) -> list[TranscriptTurn] | None:
         checkpoint = await saver.aget({"configurable": {"thread_id": thread_id}})
     if checkpoint is None:
         return None
-    return _turns_from_messages(checkpoint["channel_values"].get("messages", []))
+    channels = checkpoint["channel_values"]
+    return _turns_from_messages(channels.get("messages", []),
+                                citations=channels.get("citations", []))

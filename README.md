@@ -60,6 +60,16 @@ Chat is multi-turn: the UI carries a `thread_id`, history is checkpointed to
 `data/checkpoints.db`, long conversations get summarized. `AGENT_MODE=multi`
 switches to a planner → researcher → synthesizer supervisor.
 
+The web UI (phase 4):
+- **Per-request provider toggle** — dropdown switches reasoning between
+  Anthropic / OpenAI / local Ollama per message; `GET /api/providers` grays out
+  providers with no key or no reachable Ollama.
+- **Streaming** — replies arrive over SSE (`POST /api/chat/stream`): live agent
+  activity ("calling rag_query…") plus token-by-token text.
+- **Citations** — chips under each reply link the arXiv papers the answer drew on.
+- **Thread sidebar** — past conversations persist (list / restore / delete);
+  markdown rendering via vendored `marked` + `DOMPurify` (works offline, no build step).
+
 Keyless demo: set `RETRIEVAL_MODE=sparse` — BM25-only retrieval, no OpenAI key.
 First reranked query downloads the ~80MB cross-encoder to the local cache.
 
@@ -73,12 +83,13 @@ uv run pytest -m local         # real local model; needs Ollama running, no keys
 
 ## Layout
 
-- `llm/` — provider abstraction (Anthropic + OpenAI), prompts, structured output, prompt caching
+- `llm/` — provider abstraction (Anthropic + OpenAI + local/Ollama), streaming, prompts,
+  structured output, prompt caching
 - `rag/` — arXiv fetch, PDF parse, chunk, embed (dense + BM25 sparse), Qdrant store (hybrid RRF),
   rerank, query rewrite, retrieve, answer, migrate
 - `agents/` — LangGraph agent with SQLite-checkpointed memory; multi-agent supervisor (`agents/multi.py`);
   custom MCP server (`python -m agents.mcp_server`); MCP client (also consumes `mcp-server-fetch`)
 - `eval/` — golden dataset, LLM judge, retrieval metrics, report generator, ablation mode
-- `api/` — FastAPI routes + static frontend
+- `api/` — FastAPI routes (chat, SSE stream, ingest, providers, threads) + static frontend
 
 Imports flow one way: `api → agents → rag/llm`; `eval → rag/agents/llm`.

@@ -49,3 +49,24 @@ def test_turns_from_messages():
         ("assistant", "Let me check."),
         ("assistant", "It is attention."),
     ]
+
+
+def test_turns_attach_citations_to_last_assistant_turn():
+    from api.threads import _turns_from_messages
+
+    messages = [
+        {"role": "user", "content": "q1"},
+        {"role": "assistant", "content": [{"type": "text", "text": "a1"}]},
+        {"role": "user", "content": "q2"},
+        {"role": "assistant", "content": [{"type": "text", "text": "a2"}]},
+    ]
+    turns = _turns_from_messages(messages, citations=["1706.03762", "2105.02723", "1706.03762"])
+    assert turns[1].citations == []
+    assert turns[3].citations == ["1706.03762", "2105.02723"]  # deduped, order kept
+
+
+def test_turns_citations_empty_when_channel_missing():
+    from api.threads import _turns_from_messages
+
+    turns = _turns_from_messages([{"role": "user", "content": "q"}], citations=[])
+    assert all(t.citations == [] for t in turns)
