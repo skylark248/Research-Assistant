@@ -21,6 +21,14 @@ from rag.retrieve import retrieve
 from rag.store import VectorStore
 
 
+def _faithfulness_rate(rows: list[dict]) -> float | None:
+    """Fraction of non-None verdicts that are True; None when nothing was checked."""
+    verdicts = [r["faithful"] for r in rows if r.get("faithful") is not None]
+    if not verdicts:
+        return None
+    return sum(1 for v in verdicts if v) / len(verdicts)
+
+
 def run_eval(dataset_path: str = "eval/golden.json",
              report_path: str = "report.json") -> dict:
     store = VectorStore()
@@ -44,6 +52,7 @@ def run_eval(dataset_path: str = "eval/golden.json",
             "precision": precision,
             "recall": recall,
             **scores.model_dump(),
+            "faithful": answer.faithful,
             "answer": answer.text,
         })
 
@@ -54,6 +63,7 @@ def run_eval(dataset_path: str = "eval/golden.json",
         "avg_faithfulness": mean(r["faithfulness"] for r in rows),
         "avg_relevance": mean(r["relevance"] for r in rows),
         "avg_citation_accuracy": mean(r["citation_accuracy"] for r in rows),
+        "faithfulness_rate": _faithfulness_rate(rows),
     }
     report = {"summary": summary, "rows": rows}
     Path(report_path).write_text(json.dumps(report, indent=2))
@@ -63,11 +73,24 @@ def run_eval(dataset_path: str = "eval/golden.json",
 # Ablation presets: each row of the comparison table. Order matters — the
 # printed table reads as "what did each added technique buy us".
 PRESETS: dict[str, dict] = {
-    "baseline-dense": {"retrieval_mode": "dense", "rerank_enabled": False, "rewrite_enabled": False},
-    "sparse": {"retrieval_mode": "sparse", "rerank_enabled": False, "rewrite_enabled": False},
-    "hybrid": {"retrieval_mode": "hybrid", "rerank_enabled": False, "rewrite_enabled": False},
-    "hybrid+rerank": {"retrieval_mode": "hybrid", "rerank_enabled": True, "rewrite_enabled": False},
-    "full": {"retrieval_mode": "hybrid", "rerank_enabled": True, "rewrite_enabled": True},
+    "baseline-dense": {"retrieval_mode": "dense", "rerank_enabled": False,
+                       "rewrite_enabled": False, "grading_enabled": False,
+                       "faithfulness_enabled": False},
+    "sparse": {"retrieval_mode": "sparse", "rerank_enabled": False,
+               "rewrite_enabled": False, "grading_enabled": False,
+               "faithfulness_enabled": False},
+    "hybrid": {"retrieval_mode": "hybrid", "rerank_enabled": False,
+               "rewrite_enabled": False, "grading_enabled": False,
+               "faithfulness_enabled": False},
+    "hybrid+rerank": {"retrieval_mode": "hybrid", "rerank_enabled": True,
+                      "rewrite_enabled": False, "grading_enabled": False,
+                      "faithfulness_enabled": False},
+    "hybrid+rerank+grade": {"retrieval_mode": "hybrid", "rerank_enabled": True,
+                            "rewrite_enabled": False, "grading_enabled": True,
+                            "faithfulness_enabled": False},
+    "full": {"retrieval_mode": "hybrid", "rerank_enabled": True,
+             "rewrite_enabled": True, "grading_enabled": True,
+             "faithfulness_enabled": False},
 }
 
 
@@ -78,7 +101,8 @@ def run_ablation(dataset_path: str = "eval/golden.json",
     Mutates settings per preset and restores the originals afterwards —
     fine for this offline, single-threaded harness.
     """
-    fields = ["retrieval_mode", "rerank_enabled", "rewrite_enabled"]
+    fields = ["retrieval_mode", "rerank_enabled", "rewrite_enabled",
+              "grading_enabled", "faithfulness_enabled"]
     original = {f: getattr(settings, f) for f in fields}
     summaries: dict[str, dict] = {}
     try:
@@ -120,6 +144,8 @@ def main() -> None:
     print(f"  faithfulness        : {s['avg_faithfulness']:.2f} / 5")
     print(f"  relevance           : {s['avg_relevance']:.2f} / 5")
     print(f"  citation accuracy   : {s['avg_citation_accuracy']:.2f} / 5")
+    if s["faithfulness_rate"] is not None:
+        print(f"  verified answers    : {s['faithfulness_rate']:.0%}")
 
 
 if __name__ == "__main__":

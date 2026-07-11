@@ -80,10 +80,10 @@ def test_ablation_sweeps_presets_and_restores_settings(monkeypatch, tmp_path):
     report = run_mod.run_ablation(report_path=str(tmp_path / "ablation.json"))
 
     assert list(report["presets"]) == ["baseline-dense", "sparse", "hybrid",
-                                       "hybrid+rerank", "full"]
-    assert [s["mode"] for s in seen] == ["dense", "sparse", "hybrid", "hybrid", "hybrid"]
-    assert [s["rerank"] for s in seen] == [False, False, False, True, True]
-    assert [s["rewrite"] for s in seen] == [False, False, False, False, True]
+                                       "hybrid+rerank", "hybrid+rerank+grade", "full"]
+    assert [s["mode"] for s in seen] == ["dense", "sparse", "hybrid", "hybrid", "hybrid", "hybrid"]
+    assert [s["rerank"] for s in seen] == [False, False, False, True, True, True]
+    assert [s["rewrite"] for s in seen] == [False, False, False, False, False, True]
     assert seen[0]["preset_report"] == str(tmp_path / "report-baseline-dense.json")
     # settings restored after the sweep
     assert settings.retrieval_mode == "hybrid"
@@ -106,3 +106,28 @@ def test_ablation_restores_settings_on_failure(monkeypatch, tmp_path):
     with pytest.raises(RuntimeError):
         run_mod.run_ablation(report_path=str(tmp_path / "ablation.json"))
     assert settings.retrieval_mode == "hybrid"
+
+
+def test_ablation_presets_pin_phase5_flags():
+    from eval.run import PRESETS
+
+    assert "hybrid+rerank+grade" in PRESETS
+    for name, preset in PRESETS.items():
+        # every preset must pin both new flags so rows stay comparable
+        assert "grading_enabled" in preset, name
+        assert preset["faithfulness_enabled"] is False, name  # not a retrieval technique
+    assert PRESETS["hybrid+rerank+grade"]["grading_enabled"] is True
+    assert PRESETS["hybrid+rerank"]["grading_enabled"] is False
+    assert PRESETS["full"]["grading_enabled"] is True
+
+
+def test_faithfulness_rate():
+    import pytest
+
+    from eval.run import _faithfulness_rate
+
+    assert _faithfulness_rate([]) is None
+    assert _faithfulness_rate([{"faithful": None}]) is None
+    rows = [{"faithful": True}, {"faithful": False},
+            {"faithful": None}, {"faithful": True}]
+    assert _faithfulness_rate(rows) == pytest.approx(2 / 3)
