@@ -318,7 +318,7 @@ async def test_on_event_streams_deltas_and_statuses(monkeypatch):
     from rag.answer import RagAnswer
 
     monkeypatch.setattr(graph_mod, "answer_question",
-                        lambda q, store=None, provider=None: RagAnswer(
+                        lambda q, store=None, provider=None, on_status=None: RagAnswer(
                             text="A.", sources=["1706.03762"]))
     script = [
         LLMResponse(tool_calls=[ToolCall(id="tu_1", name="rag_query",
@@ -344,3 +344,95 @@ async def test_on_event_streams_deltas_and_statuses(monkeypatch):
     assert "rag_query" in events[1]["text"]        # status line
     assert events[-1]["has_tools"] is False        # final answer turn
     assert "".join(e["text"] for e in events if e["event"] == "delta") == "Final answer."
+
+
+def test_combine_verdicts():
+    from agents.graph import _combine_verdicts
+
+    assert _combine_verdicts([]) is None
+    assert _combine_verdicts([True, True]) is True
+    assert _combine_verdicts([True, None]) is None
+    assert _combine_verdicts([True, None, False]) is False
+
+
+async def test_faithful_verdicts_collected_per_rag_query(monkeypatch):
+    import agents.graph as graph_mod
+    from rag.answer import RagAnswer
+
+    verdicts = iter([True, False])
+
+    def fake_answer(q, store=None, provider=None, on_status=None):
+        return RagAnswer(text="A [p].", sources=["p"], faithful=next(verdicts))
+
+    monkeypatch.setattr(graph_mod, "answer_question", fake_answer)
+    _scripted_generate(monkeypatch, [
+        LLMResponse(tool_calls=[
+            ToolCall(id="tu_1", name="rag_query", input={"question": "a"}),
+            ToolCall(id="tu_2", name="rag_query", input={"question": "b"}),
+        ]),
+        LLMResponse(text="done"),
+    ])
+    graph = graph_mod.build_graph(FakeToolbox())
+    state = await graph.ainvoke({"messages": [{"role": "user", "content": "q"}],
+                                 "steps": 0})
+    assert state["verdicts"] == [True, False]
+
+
+async def test_run_agent_returns_anded_faithful(monkeypatch, tmp_path):
+    import agents.graph as graph_mod
+    from config import settings
+    from rag.answer import RagAnswer
+
+    monkeypatch.setattr(settings, "checkpoint_db", str(tmp_path / "cp.db"))
+
+    def fake_answer(q, store=None, provider=None, on_status=None):
+        return RagAnswer(text="A [p].", sources=["p"], faithful=True)
+
+    monkeypatch.setattr(graph_mod, "answer_question", fake_answer)
+    _scripted_generate(monkeypatch, [
+        LLMResponse(tool_calls=[ToolCall(id="tu_1", name="rag_query",
+                                         input={"question": "q"})]),
+        LLMResponse(text="grounded answer"),
+    ])
+
+    class FakeToolboxCM:
+        async def __aenter__(self):
+            return FakeToolbox()
+
+        async def __aexit__(self, *exc):
+            return None
+
+    monkeypatch.setattr(graph_mod, "MCPToolbox", FakeToolboxCM)
+    result = await graph_mod.run_agent("q")
+    assert result.faithful is True
+    assert result.citations == ["p"]
+
+
+async def test_rag_query_statuses_forwarded_to_on_event(monkeypatch):
+    import agents.graph as graph_mod
+    from rag.answer import RagAnswer
+
+    def fake_answer(q, store=None, provider=None, on_status=None):
+        on_status("grading 2 chunks…")
+        return RagAnswer(text="A.", sources=[], faithful=True)
+
+    monkeypatch.setattr(graph_mod, "answer_question", fake_answer)
+    script = [
+        LLMResponse(tool_calls=[ToolCall(id="tu_1", name="rag_query",
+                                         input={"question": "q"})]),
+        LLMResponse(text="Final."),
+    ]
+
+    def fake_generate_stream(messages, **kwargs):
+        resp = script.pop(0)
+        if resp.text:
+            kwargs["on_delta"](resp.text)
+        return resp
+
+    monkeypatch.setattr(graph_mod, "generate_stream", fake_generate_stream)
+    events = []
+    graph = graph_mod.build_graph(FakeToolbox(), on_event=events.append)
+    await graph.ainvoke({"messages": [{"role": "user", "content": "q"}],
+                         "steps": 0, "citations": []})
+    status_texts = [e["text"] for e in events if e["event"] == "status"]
+    assert "grading 2 chunks…" in status_texts

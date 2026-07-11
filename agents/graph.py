@@ -42,11 +42,27 @@ class AgentResult(NamedTuple):
     # False when no checkpoint exists under the caller's thread_id (multi-mode
     # decomposed plans) — the API skips thread registration in that case.
     checkpointed: bool = True
+    # AND of per-rag_query faithfulness verdicts for the whole thread
+    # (verdicts, like citations, accumulate across a thread's turns):
+    # any False → False; else any None → None; else True. None when no
+    # rag_query ran or the check is disabled.
+    faithful: bool | None = None
 
 
 def _dedupe(items: list[str]) -> list[str]:
     """Order-preserving dedupe (dict keys keep insertion order)."""
     return list(dict.fromkeys(items))
+
+
+def _combine_verdicts(verdicts: list[bool | None]) -> bool | None:
+    """AND with unknowns: False dominates, then None, else True. Empty → None."""
+    if not verdicts:
+        return None
+    if any(v is False for v in verdicts):
+        return False
+    if any(v is None for v in verdicts):
+        return None
+    return True
 
 
 RAG_QUERY_TOOL = {
@@ -68,6 +84,7 @@ class AgentState(TypedDict):
     steps: int
     summary: str
     citations: Annotated[list[str], operator.add]
+    verdicts: Annotated[list, operator.add]  # bool | None per rag_query call
 
 
 def _trimmed_history(messages: list[dict], keep: int) -> list[dict]:
@@ -159,6 +176,7 @@ def build_graph(toolbox, checkpointer=None, provider: str | None = None, on_even
         last = state["messages"][-1]
         results: list[dict] = []
         sources: list[str] = []
+        verdicts: list[bool | None] = []
         for block in last["content"]:
             if block["type"] != "tool_use":
                 continue
@@ -168,12 +186,17 @@ def build_graph(toolbox, checkpointer=None, provider: str | None = None, on_even
             logger.info("Tool call: %s(%s)", name, args)
             if name == "rag_query":
                 try:
+                    kwargs = {"provider": provider}
+                    if on_event is not None:
+                        kwargs["on_status"] = (
+                            lambda t: on_event({"event": "status", "text": t}))
                     ans = await asyncio.to_thread(
                         functools.partial(answer_question, args["question"],
-                                          provider=provider))
+                                          **kwargs))
                     content = f"{ans.text}\n\nSources: {', '.join(ans.sources) or 'none'}"
                     is_error = False
                     sources.extend(ans.sources)
+                    verdicts.append(ans.faithful)
                 except Exception as exc:  # e.g. Qdrant down — agent decides what to do
                     content, is_error = f"rag_query failed: {exc}", True
             else:
@@ -184,6 +207,7 @@ def build_graph(toolbox, checkpointer=None, provider: str | None = None, on_even
             "messages": [{"role": "user", "content": results}],
             "steps": state["steps"] + 1,
             "citations": sources,
+            "verdicts": verdicts,
         }
 
     def route(state: AgentState) -> str:
@@ -233,10 +257,11 @@ async def run_agent(question: str, thread_id: str | None = None,
                             on_event=on_event)
         state = await graph.ainvoke(
             {"messages": [{"role": "user", "content": question}], "steps": 0,
-             "citations": []},
+             "citations": [], "verdicts": []},
             config={"recursion_limit": settings.agent_max_steps * 2 + 6,
                     "configurable": {"thread_id": thread_id}},
         )
         text = final_text(state)
         return AgentResult(text=text or STEP_LIMIT_MESSAGE,
-                           citations=_dedupe(state.get("citations", [])))
+                           citations=_dedupe(state.get("citations", [])),
+                           faithful=_combine_verdicts(state.get("verdicts", [])))
