@@ -5,7 +5,8 @@ calls. The planner may return simple=True and fall through to the single-agent
 loop (which keeps thread memory). Researchers run the existing agent loop
 sequentially, each on a fresh single-shot thread — multi mode itself keeps no
 conversation memory. A failed sub-question is reported to the synthesizer,
-which answers from what remains.
+which answers from what remains. The faithfulness verdict is the AND of the
+researchers' verdicts — the synthesizer's own composition is not re-checked.
 """
 
 import asyncio
@@ -13,7 +14,7 @@ import logging
 
 from pydantic import BaseModel, Field
 
-from agents.graph import AgentResult, _dedupe, run_agent
+from agents.graph import AgentResult, _combine_verdicts, _dedupe, run_agent
 from config import settings
 from llm.base import generate, generate_stream
 from llm.prompts import PLANNER_SYSTEM_PROMPT, SYNTHESIZER_SYSTEM_PROMPT
@@ -56,6 +57,7 @@ async def run_multi_agent(question: str, thread_id: str | None = None,
                                on_event=on_event)
     findings: list[tuple[str, str]] = []
     citations: list[str] = []
+    verdicts: list[bool | None] = []
     for sub_question in plan.sub_questions[:4]:
         if on_event is not None:
             on_event({"event": "status", "text": f"researching: {sub_question}"})
@@ -64,16 +66,20 @@ async def run_multi_agent(question: str, thread_id: str | None = None,
             result = await run_agent(sub_question, provider=provider)
             findings.append((sub_question, result.text))
             citations.extend(result.citations)
+            verdicts.append(result.faithful)
         except Exception as exc:
             logger.exception("Researcher failed for %r", sub_question)
             findings.append((sub_question, f"FAILED: {exc}"))
+            verdicts.append(None)
     on_delta = (lambda t: on_event({"event": "delta", "text": t})) if on_event else None
     text = await asyncio.to_thread(_synthesize, question, findings, provider, on_delta)
     if on_event is not None:
         on_event({"event": "turn_end", "has_tools": False})
     # Researchers ran on fresh single-shot threads; nothing was checkpointed
     # under the caller's thread_id, so there is no transcript to restore.
-    return AgentResult(text=text, citations=_dedupe(citations), checkpointed=False)
+    return AgentResult(text=text, citations=_dedupe(citations),
+                       checkpointed=False,
+                       faithful=_combine_verdicts(verdicts))
 
 
 async def run_chat(message: str, thread_id: str | None = None,

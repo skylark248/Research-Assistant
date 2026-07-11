@@ -208,3 +208,46 @@ async def test_simple_plan_result_stays_checkpointed(monkeypatch):
     monkeypatch.setattr(multi_mod, "run_agent", fake_run_agent)
     result = await multi_mod.run_multi_agent("simple question")
     assert result.checkpointed is True
+
+
+async def test_multi_ands_researcher_verdicts(monkeypatch):
+    import agents.multi as multi_mod
+    from agents.graph import AgentResult
+
+    monkeypatch.setattr(multi_mod, "_plan", lambda q, provider=None: multi_mod.Plan(
+        simple=False, sub_questions=["a", "b"]))
+    results = iter([
+        AgentResult(text="fa", citations=["p1"], faithful=True),
+        AgentResult(text="fb", citations=["p2"], faithful=False),
+    ])
+
+    async def fake_run_agent(q, thread_id=None, provider=None, on_event=None):
+        return next(results)
+
+    monkeypatch.setattr(multi_mod, "run_agent", fake_run_agent)
+    monkeypatch.setattr(multi_mod, "_synthesize",
+                        lambda q, f, provider=None, on_delta=None: "combined")
+    result = await multi_mod.run_multi_agent("q")
+    assert result.faithful is False
+    assert result.checkpointed is False
+
+
+async def test_multi_failed_researcher_yields_unknown_verdict(monkeypatch):
+    import agents.multi as multi_mod
+    from agents.graph import AgentResult
+
+    monkeypatch.setattr(multi_mod, "_plan", lambda q, provider=None: multi_mod.Plan(
+        simple=False, sub_questions=["a", "b"]))
+    calls = {"n": 0}
+
+    async def fake_run_agent(q, thread_id=None, provider=None, on_event=None):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("researcher exploded")
+        return AgentResult(text="fa", citations=["p1"], faithful=True)
+
+    monkeypatch.setattr(multi_mod, "run_agent", fake_run_agent)
+    monkeypatch.setattr(multi_mod, "_synthesize",
+                        lambda q, f, provider=None, on_delta=None: "combined")
+    result = await multi_mod.run_multi_agent("q")
+    assert result.faithful is None  # [True, None] → unknown, not verified
