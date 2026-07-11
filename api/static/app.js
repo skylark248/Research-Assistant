@@ -49,6 +49,12 @@ function addCitations(citations) {
   log.appendChild(row);
 }
 
+function addVerdict(faithful) {
+  // Only an explicit false is worth a warning; true/null stay quiet.
+  if (faithful !== false) return;
+  log.appendChild(el("div", "verdict", "⚠ citations unverified"));
+}
+
 function addStatus(text) {
   const node = el("div", "status", text);
   log.appendChild(node);
@@ -164,6 +170,7 @@ async function sendMessage() {
           if (pending !== log.lastChild) log.appendChild(pending); // e.g. no deltas streamed
           renderMarkdown(pending, data.reply); // authoritative full reply
           addCitations(data.citations);
+          addVerdict(data.faithful);
           finished = true;
           loadThreads();
         } else if (name === "error") {
