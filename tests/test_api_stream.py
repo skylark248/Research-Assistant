@@ -71,3 +71,27 @@ def test_chat_stream_error_unwraps_exception_groups(monkeypatch):
     assert "event: error" in body
     assert "401 invalid x-api-key" in body
     assert "TaskGroup" not in body
+
+
+def test_stream_done_carries_faithful(monkeypatch):
+    import api.main as api_main
+    from agents.graph import AgentResult
+    from fastapi.testclient import TestClient
+
+    class FakeStore:
+        def ping(self):
+            pass
+
+        def check_schema(self):
+            pass
+
+    async def fake_run_chat(question, thread_id=None, provider=None, on_event=None):
+        return AgentResult(text="grounded", citations=["1706.03762"], faithful=False)
+
+    monkeypatch.setattr(api_main, "VectorStore", FakeStore)
+    monkeypatch.setattr(api_main, "run_chat", fake_run_chat)
+    with TestClient(api_main.app) as client:
+        resp = client.post("/api/chat/stream", json={"message": "hi"})
+    assert resp.status_code == 200
+    assert "event: done" in resp.text
+    assert '"faithful": false' in resp.text

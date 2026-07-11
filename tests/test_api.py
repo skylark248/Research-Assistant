@@ -50,7 +50,7 @@ def test_chat_reuses_given_thread_id(monkeypatch):
     monkeypatch.setattr(api_main, "run_chat", fake_run_chat)
     with _client(monkeypatch) as client:
         resp = client.post("/api/chat", json={"message": "follow-up", "thread_id": "t-42"})
-    assert resp.json() == {"reply": "echo: follow-up [t-42]", "thread_id": "t-42", "citations": []}
+    assert resp.json() == {"reply": "echo: follow-up [t-42]", "thread_id": "t-42", "citations": [], "faithful": None}
 
 
 def test_ingest_endpoint(monkeypatch):
@@ -188,3 +188,16 @@ def test_chat_skips_thread_upsert_when_not_checkpointed(monkeypatch):
         resp = client.post("/api/chat", json={"message": "decomposed multi question"})
         assert resp.status_code == 200
         assert client.get("/api/threads").json() == []
+
+
+def test_chat_returns_faithful(monkeypatch):
+    import api.main as api_main
+    from agents.graph import AgentResult
+
+    async def fake_run_chat(question, thread_id=None, provider=None):
+        return AgentResult(text="grounded", citations=["1706.03762"], faithful=False)
+
+    monkeypatch.setattr(api_main, "run_chat", fake_run_chat)
+    with _client(monkeypatch) as client:
+        resp = client.post("/api/chat", json={"message": "hi"})
+    assert resp.json()["faithful"] is False

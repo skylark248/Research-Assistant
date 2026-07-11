@@ -42,6 +42,7 @@ class ChatResponse(BaseModel):
     reply: str
     thread_id: str
     citations: list[str] = []
+    faithful: bool | None = None  # False → UI shows "citations unverified"
 
 
 class IngestRequest(BaseModel):
@@ -73,7 +74,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
     if result.checkpointed:  # decomposed multi plans have no restorable transcript
         await run_in_threadpool(upsert_thread, thread_id, req.message)
     return ChatResponse(reply=result.text, thread_id=thread_id,
-                        citations=result.citations)
+                        citations=result.citations, faithful=result.faithful)
 
 
 @app.post("/api/chat/stream")
@@ -95,7 +96,8 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
             if result.checkpointed:  # decomposed multi plans have no restorable transcript
                 await run_in_threadpool(upsert_thread, thread_id, req.message)
             await queue.put({"event": "done", "reply": result.text,
-                             "thread_id": thread_id, "citations": result.citations})
+                             "thread_id": thread_id, "citations": result.citations,
+                             "faithful": result.faithful})
         except Exception as exc:
             logger.exception("chat stream failed")
             await queue.put({"event": "error", "message": str(_root_error(exc))})
