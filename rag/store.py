@@ -1,3 +1,4 @@
+import random
 import uuid
 
 from pydantic import BaseModel
@@ -157,3 +158,35 @@ class VectorStore:
             limit=1,
         )
         return len(hits) > 0
+
+    def sample_chunks(self, n: int, seed: int = 0) -> list[dict]:
+        """Up to n chunk payloads for synthetic eval generation (phase 6).
+
+        Scrolls the whole collection (payloads only), shuffles with the given
+        seed, then draws round-robin across paper_ids so a heavily-chunked
+        paper cannot dominate the sample. Deterministic per seed.
+        """
+        points, offset = [], None
+        while True:
+            batch, offset = self.client.scroll(
+                collection_name=self.collection, limit=256, offset=offset,
+                with_payload=True, with_vectors=False,
+            )
+            points.extend(batch)
+            if offset is None:
+                break
+        rng = random.Random(seed)
+        rng.shuffle(points)
+        by_paper: dict[str, list] = {}
+        for p in points:
+            by_paper.setdefault(p.payload["paper_id"], []).append(p)
+        ordered_papers = sorted(by_paper)  # stable draw order across runs
+        out: list[dict] = []
+        while len(out) < n and any(by_paper.values()):
+            for pid in ordered_papers:
+                if by_paper[pid] and len(out) < n:
+                    p = by_paper[pid].pop()
+                    out.append({"paper_id": p.payload["paper_id"],
+                                "title": p.payload["title"],
+                                "text": p.payload["chunk_text"]})
+        return out

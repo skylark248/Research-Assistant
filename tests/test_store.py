@@ -191,3 +191,62 @@ def test_check_schema_accepts_matching_dimension(monkeypatch):
     monkeypatch.setattr(settings, "embedding_dim", 384)
     fake = FakeQdrant(exists=True, dense_size=384)
     _store(fake).check_schema()  # no raise
+
+
+class ScrollFake:
+    """Minimal qdrant fake for scroll pagination: two pages, then done."""
+
+    def __init__(self, points):
+        self._points = points
+
+    def scroll(self, collection_name, limit=None, offset=None,
+               with_payload=None, with_vectors=None, scroll_filter=None):
+        start = offset or 0
+        page = self._points[start:start + limit]
+        next_offset = start + limit if start + limit < len(self._points) else None
+        return page, next_offset
+
+
+def _point(pid, idx):
+    return SimpleNamespace(payload={"paper_id": pid, "title": f"T-{pid}",
+                                    "chunk_text": f"text-{pid}-{idx}",
+                                    "chunk_index": idx, "section": ""})
+
+
+def test_sample_chunks_round_robin_across_papers():
+    from rag.store import VectorStore
+
+    points = [_point("paperA", i) for i in range(5)] + [_point("paperB", 0)]
+    store = VectorStore(client=ScrollFake(points))
+    out = store.sample_chunks(2, seed=0)
+    # one heavily-chunked paper must not take both slots
+    assert sorted({c["paper_id"] for c in out}) == ["paperA", "paperB"]
+    assert set(out[0]) == {"paper_id", "title", "text"}
+
+
+def test_sample_chunks_deterministic_per_seed():
+    from rag.store import VectorStore
+
+    points = [_point("paperA", i) for i in range(6)] + \
+             [_point("paperB", i) for i in range(6)]
+    a = VectorStore(client=ScrollFake(points)).sample_chunks(4, seed=3)
+    b = VectorStore(client=ScrollFake(points)).sample_chunks(4, seed=3)
+    assert a == b
+
+
+def test_sample_chunks_paginates_and_caps_at_n():
+    from rag.store import VectorStore
+
+    points = [_point(f"p{i}", 0) for i in range(300)]  # > one 256 scroll page
+    store = VectorStore(client=ScrollFake(points))
+    out = store.sample_chunks(10, seed=0)
+    assert len(out) == 10
+    assert len({c["paper_id"] for c in out}) == 10  # all distinct papers
+
+
+def test_sample_chunks_exhausted_supply_returns_all():
+    from rag.store import VectorStore
+
+    points = [_point("paperA", 0), _point("paperB", 0)]
+    store = VectorStore(client=ScrollFake(points))
+    assert len(store.sample_chunks(50, seed=0)) == 2
