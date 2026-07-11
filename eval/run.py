@@ -17,6 +17,7 @@ from config import settings
 from eval.judge import judge_answer
 from eval.metrics import precision_recall
 from rag.answer import answer_question
+from rag.grade import grade_chunks
 from rag.retrieve import retrieve
 from rag.store import VectorStore
 
@@ -39,6 +40,8 @@ def run_eval(dataset_path: str = "eval/golden.json",
     for item in dataset:
         question = item["question"]
         chunks = retrieve(question)
+        if settings.grading_enabled:
+            chunks = grade_chunks(question, chunks)
         precision, recall = precision_recall(
             [c.paper_id for c in chunks], item["expected_paper_ids"]
         )

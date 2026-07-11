@@ -70,9 +70,12 @@ uv run python -m rag.migrate --yes
 
 Retrieval is a staged pipeline — `[rewrite] → embed → search (dense|sparse|hybrid) → [rerank] → [grade → retry once]` —
 controlled by `.env` flags (`RETRIEVAL_MODE`, `RERANK_ENABLED`, `REWRITE_ENABLED`, `GRADING_ENABLED`; see `config.py`).
+BM25 sparse search and reranking run on local ONNX models — no API keys needed.
 After answering, `FAITHFULNESS_ENABLED` runs a citation-faithfulness check; an
 unsupported answer gets an "⚠ citations unverified" badge in the UI (live
 responses only — verdicts aren't persisted, so restored threads never show it).
+The verdict accumulates over the whole conversation — once any turn in a thread
+fails verification, the badge appears on subsequent replies in that thread too.
 Both guardrails fail open and add 1–3 LLM calls per request — turn them off on
 slow local models if latency hurts.
 Chat is multi-turn: the UI carries a `thread_id`, history is checkpointed to

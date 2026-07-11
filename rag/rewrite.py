@@ -3,6 +3,9 @@ answer generation still sees the original question).
 
 Fails open: any LLM error logs a warning and returns the original question —
 retrieval must never break because rewriting broke.
+
+retry_rewrite_query is the corrective-RAG variant: an alternative query after
+grading rejected every retrieved chunk; it fails open to the original question.
 """
 
 import logging

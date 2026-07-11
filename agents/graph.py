@@ -84,7 +84,7 @@ class AgentState(TypedDict):
     steps: int
     summary: str
     citations: Annotated[list[str], operator.add]
-    verdicts: Annotated[list, operator.add]  # bool | None per rag_query call
+    verdicts: Annotated[list[bool | None], operator.add]  # bool | None per rag_query call
 
 
 def _trimmed_history(messages: list[dict], keep: int) -> list[dict]:

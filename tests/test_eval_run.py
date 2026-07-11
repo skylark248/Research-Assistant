@@ -3,6 +3,7 @@ import json
 
 def test_run_eval_writes_report(monkeypatch, tmp_path):
     import eval.run as run_mod
+    from config import settings
     from eval.judge import JudgeScores
     from rag.answer import RagAnswer
     from rag.store import ScoredChunk
@@ -26,6 +27,10 @@ def test_run_eval_writes_report(monkeypatch, tmp_path):
             pass
 
     monkeypatch.setattr(run_mod, "VectorStore", FakeVectorStore)
+
+    # Not testing grading here — keep this test's chunks ungraded so it stays
+    # hermetic (grading would otherwise hit a real LLM provider).
+    monkeypatch.setattr(settings, "grading_enabled", False)
 
     chunk = ScoredChunk(paper_id="1706.03762", title="Attention", text="ctx", score=0.9)
     monkeypatch.setattr(run_mod, "retrieve", lambda q: [chunk])
@@ -119,6 +124,99 @@ def test_ablation_presets_pin_phase5_flags():
     assert PRESETS["hybrid+rerank+grade"]["grading_enabled"] is True
     assert PRESETS["hybrid+rerank"]["grading_enabled"] is False
     assert PRESETS["full"]["grading_enabled"] is True
+
+
+def test_run_eval_grades_measured_chunks_when_enabled(monkeypatch, tmp_path):
+    import eval.run as run_mod
+    from config import settings
+    from eval.judge import JudgeScores
+    from rag.answer import RagAnswer
+    from rag.store import ScoredChunk
+
+    dataset = [
+        {"question": "q1", "expected_paper_ids": ["1706.03762"], "expected_answer_gist": "g1"},
+    ]
+    dataset_path = tmp_path / "golden.json"
+    dataset_path.write_text(json.dumps(dataset))
+    report_path = tmp_path / "report.json"
+
+    class FakeVectorStore:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def ping(self):
+            pass
+
+        def check_schema(self):
+            pass
+
+    monkeypatch.setattr(run_mod, "VectorStore", FakeVectorStore)
+
+    kept = ScoredChunk(paper_id="1706.03762", title="Attention", text="ctx", score=0.9)
+    dropped = ScoredChunk(paper_id="1810.04805", title="BERT", text="ctx2", score=0.5)
+    monkeypatch.setattr(run_mod, "retrieve", lambda q: [kept, dropped])
+    monkeypatch.setattr(run_mod, "answer_question",
+                        lambda q: RagAnswer(text="ans [1706.03762]", sources=["1706.03762"]))
+    monkeypatch.setattr(
+        run_mod, "judge_answer",
+        lambda question, answer, expected_gist, contexts: JudgeScores(
+            faithfulness=4, relevance=5, citation_accuracy=3, reasoning="r"),
+    )
+
+    monkeypatch.setattr(settings, "grading_enabled", True)
+    monkeypatch.setattr(run_mod, "grade_chunks", lambda question, chunks: [kept])
+
+    report = run_mod.run_eval(dataset_path=str(dataset_path), report_path=str(report_path))
+    row = report["rows"][0]
+    assert row["retrieved_paper_ids"] == ["1706.03762"]
+
+
+def test_run_eval_skips_grading_when_disabled(monkeypatch, tmp_path):
+    import eval.run as run_mod
+    from config import settings
+    from eval.judge import JudgeScores
+    from rag.answer import RagAnswer
+    from rag.store import ScoredChunk
+
+    dataset = [
+        {"question": "q1", "expected_paper_ids": ["1706.03762"], "expected_answer_gist": "g1"},
+    ]
+    dataset_path = tmp_path / "golden.json"
+    dataset_path.write_text(json.dumps(dataset))
+    report_path = tmp_path / "report.json"
+
+    class FakeVectorStore:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def ping(self):
+            pass
+
+        def check_schema(self):
+            pass
+
+    monkeypatch.setattr(run_mod, "VectorStore", FakeVectorStore)
+
+    kept = ScoredChunk(paper_id="1706.03762", title="Attention", text="ctx", score=0.9)
+    dropped = ScoredChunk(paper_id="1810.04805", title="BERT", text="ctx2", score=0.5)
+    monkeypatch.setattr(run_mod, "retrieve", lambda q: [kept, dropped])
+    monkeypatch.setattr(run_mod, "answer_question",
+                        lambda q: RagAnswer(text="ans [1706.03762]", sources=["1706.03762"]))
+    monkeypatch.setattr(
+        run_mod, "judge_answer",
+        lambda question, answer, expected_gist, contexts: JudgeScores(
+            faithfulness=4, relevance=5, citation_accuracy=3, reasoning="r"),
+    )
+
+    def _boom(question, chunks):
+        raise AssertionError("grade_chunks must not be called when grading is disabled")
+
+    monkeypatch.setattr(settings, "grading_enabled", False)
+    monkeypatch.setattr(run_mod, "grade_chunks", _boom)
+
+    report = run_mod.run_eval(dataset_path=str(dataset_path), report_path=str(report_path))
+    row = report["rows"][0]
+    assert row["retrieved_paper_ids"] == ["1706.03762", "1810.04805"]
 
 
 def test_faithfulness_rate():
