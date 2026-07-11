@@ -4,7 +4,7 @@ Learning project covering LLM APIs + prompting, RAG, evaluation, and agents + MC
 Ingests arXiv papers, answers questions grounded in them with [paper_id] citations,
 and autonomously fetches papers it doesn't have yet.
 
-## Status: complete (all 4 phases shipped)
+## Status: complete (all 5 phases shipped)
 
 | Phase | Delivered |
 |-------|-----------|
@@ -12,6 +12,7 @@ and autonomously fetches papers it doesn't have yet.
 | 2 | Hybrid retrieval (BM25 + dense + RRF), cross-encoder reranking, query rewriting, agent memory (summarization), multi-agent supervisor, retrieval ablation |
 | 3 | Fully local, no-keys operation via Ollama (`qwen2.5:3b`) + local embeddings; live-validated end to end |
 | 4 | Per-request provider toggle in the UI, provider availability checks, SSE streaming (activity + tokens), citation chips, persistent thread sidebar |
+| 5 | Corrective RAG (LLM chunk grading + one rewritten-query retry + honest degradation) and a citation-faithfulness guardrail with an "unverified citations" badge in the UI |
 
 Design specs and implementation plans for each phase live in
 `docs/superpowers/specs/` and `docs/superpowers/plans/`. Known limitation:
@@ -67,9 +68,13 @@ uv run python -m eval.run --ablation
 uv run python -m rag.migrate --yes
 ```
 
-Retrieval is a staged pipeline — `[rewrite] → embed → search (dense|sparse|hybrid) → [rerank]` —
-controlled by `.env` flags (`RETRIEVAL_MODE`, `RERANK_ENABLED`, `REWRITE_ENABLED`; see `config.py`).
-BM25 sparse search and reranking run on local ONNX models — no API keys needed.
+Retrieval is a staged pipeline — `[rewrite] → embed → search (dense|sparse|hybrid) → [rerank] → [grade → retry once]` —
+controlled by `.env` flags (`RETRIEVAL_MODE`, `RERANK_ENABLED`, `REWRITE_ENABLED`, `GRADING_ENABLED`; see `config.py`).
+After answering, `FAITHFULNESS_ENABLED` runs a citation-faithfulness check; an
+unsupported answer gets an "⚠ citations unverified" badge in the UI (live
+responses only — verdicts aren't persisted, so restored threads never show it).
+Both guardrails fail open and add 1–3 LLM calls per request — turn them off on
+slow local models if latency hurts.
 Chat is multi-turn: the UI carries a `thread_id`, history is checkpointed to
 `data/checkpoints.db`, long conversations get summarized. `AGENT_MODE=multi`
 switches to a planner → researcher → synthesizer supervisor.
