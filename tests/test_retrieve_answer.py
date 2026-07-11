@@ -1,7 +1,16 @@
 from types import SimpleNamespace
 
+import pytest
+
 from config import settings
 from rag.sparse import SparseVector
+
+
+@pytest.fixture
+def guardrails_off(monkeypatch):
+    """Phase-5 guardrails default on; these tests exercise the pre-existing path."""
+    monkeypatch.setattr(settings, "grading_enabled", False)
+    monkeypatch.setattr(settings, "faithfulness_enabled", False)
 
 
 def _chunk(pid="1706.03762", title="Attention", text="self-attention", score=0.9):
@@ -105,7 +114,7 @@ def test_retrieve_rewrite_off_by_default(monkeypatch):
     retrieve_mod.retrieve("q", top_k=3, store=CapturingStore())
 
 
-def test_answer_question_builds_grounded_prompt(monkeypatch):
+def test_answer_question_builds_grounded_prompt(monkeypatch, guardrails_off):
     import rag.answer as answer_mod
     from llm.base import LLMResponse
 
@@ -130,7 +139,7 @@ def test_answer_question_builds_grounded_prompt(monkeypatch):
     assert "what is attention?" in captured["messages"][-1]["content"]
 
 
-def test_answer_question_threads_provider_to_generate(monkeypatch):
+def test_answer_question_threads_provider_to_generate(monkeypatch, guardrails_off):
     import rag.answer as answer_mod
     from llm.base import LLMResponse
 
@@ -149,7 +158,7 @@ def test_answer_question_threads_provider_to_generate(monkeypatch):
     assert captured["provider"] == "local"
 
 
-def test_answer_question_empty_store(monkeypatch):
+def test_answer_question_empty_store(monkeypatch, guardrails_off):
     import rag.answer as answer_mod
 
     monkeypatch.setattr(answer_mod, "retrieve", lambda q, store=None: [])
@@ -159,3 +168,138 @@ def test_answer_question_empty_store(monkeypatch):
     result = answer_mod.answer_question("anything")
     assert result.sources == []
     assert "ingest" in result.text.lower()
+
+
+def _fake_llm(text):
+    from llm.base import LLMResponse
+
+    return LLMResponse(text=text, usage={"cache_read_input_tokens": 0})
+
+
+def test_grading_filters_chunks_before_prompt(monkeypatch):
+    import rag.answer as answer_mod
+
+    monkeypatch.setattr(settings, "grading_enabled", True)
+    monkeypatch.setattr(settings, "faithfulness_enabled", False)
+    monkeypatch.setattr(answer_mod, "retrieve", lambda q, store=None: [
+        _chunk(), _chunk(pid="1810.04805", title="BERT", text="bert stuff")])
+    monkeypatch.setattr(answer_mod, "grade_chunks",
+                        lambda q, chunks, provider=None: chunks[:1])
+    captured = {}
+
+    def fake_generate(messages, **kwargs):
+        captured.update(kwargs)
+        return _fake_llm("A [1706.03762].")
+
+    monkeypatch.setattr(answer_mod, "generate", fake_generate)
+    result = answer_mod.answer_question("q")
+    assert result.sources == ["1706.03762"]              # BERT graded out
+    assert "bert stuff" not in captured["system"][1]["text"]
+
+
+def test_retry_fires_once_on_zero_survivors(monkeypatch):
+    import rag.answer as answer_mod
+
+    monkeypatch.setattr(settings, "grading_enabled", True)
+    monkeypatch.setattr(settings, "faithfulness_enabled", False)
+    retrievals = []
+    monkeypatch.setattr(answer_mod, "retrieve",
+                        lambda q, store=None: retrievals.append(q) or [_chunk()])
+    grades = iter([[], [_chunk()]])  # first grade: nothing; retry grade: survivor
+    monkeypatch.setattr(answer_mod, "grade_chunks",
+                        lambda q, chunks, provider=None: next(grades))
+    monkeypatch.setattr(answer_mod, "retry_rewrite_query",
+                        lambda q, provider=None: "alternative query")
+    monkeypatch.setattr(answer_mod, "generate",
+                        lambda *a, **k: _fake_llm("A [1706.03762]."))
+    result = answer_mod.answer_question("original q")
+    assert retrievals == ["original q", "alternative query"]
+    assert result.sources == ["1706.03762"]
+
+
+def test_honest_degradation_skips_generate(monkeypatch):
+    import rag.answer as answer_mod
+
+    monkeypatch.setattr(settings, "grading_enabled", True)
+    monkeypatch.setattr(settings, "faithfulness_enabled", False)
+    monkeypatch.setattr(answer_mod, "retrieve", lambda q, store=None: [_chunk()])
+    monkeypatch.setattr(answer_mod, "grade_chunks",
+                        lambda q, chunks, provider=None: [])
+    monkeypatch.setattr(answer_mod, "retry_rewrite_query",
+                        lambda q, provider=None: "alt")
+    monkeypatch.setattr(answer_mod, "generate",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no LLM call")))
+    result = answer_mod.answer_question("q")
+    assert result.sources == []
+    assert result.faithful is None
+    assert "ingest" in result.text.lower()
+
+
+def test_retry_skipped_when_rewrite_fails_open(monkeypatch):
+    import rag.answer as answer_mod
+
+    monkeypatch.setattr(settings, "grading_enabled", True)
+    monkeypatch.setattr(settings, "faithfulness_enabled", False)
+    retrievals = []
+    monkeypatch.setattr(answer_mod, "retrieve",
+                        lambda q, store=None: retrievals.append(q) or [_chunk()])
+    monkeypatch.setattr(answer_mod, "grade_chunks",
+                        lambda q, chunks, provider=None: [])
+    monkeypatch.setattr(answer_mod, "retry_rewrite_query",
+                        lambda q, provider=None: q)  # failed open → identical query
+    result = answer_mod.answer_question("q")
+    assert retrievals == ["q"]  # no pointless second retrieval
+    assert result.sources == []
+
+
+def test_grading_disabled_never_calls_grader(monkeypatch):
+    import rag.answer as answer_mod
+
+    monkeypatch.setattr(settings, "grading_enabled", False)
+    monkeypatch.setattr(settings, "faithfulness_enabled", False)
+    monkeypatch.setattr(answer_mod, "retrieve", lambda q, store=None: [_chunk()])
+    monkeypatch.setattr(answer_mod, "grade_chunks",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("grader must not run")))
+    monkeypatch.setattr(answer_mod, "generate",
+                        lambda *a, **k: _fake_llm("A [1706.03762]."))
+    result = answer_mod.answer_question("q")
+    assert result.sources == ["1706.03762"]
+
+
+def test_faithfulness_verdict_attached(monkeypatch):
+    import rag.answer as answer_mod
+
+    monkeypatch.setattr(settings, "grading_enabled", False)
+    monkeypatch.setattr(settings, "faithfulness_enabled", True)
+    monkeypatch.setattr(answer_mod, "retrieve", lambda q, store=None: [_chunk()])
+    monkeypatch.setattr(answer_mod, "generate",
+                        lambda *a, **k: _fake_llm("A [1706.03762]."))
+    captured = {}
+
+    def fake_check(question, answer, contexts, provider=None):
+        captured.update(question=question, answer=answer,
+                        n=len(contexts), provider=provider)
+        return False
+
+    monkeypatch.setattr(answer_mod, "check_faithfulness", fake_check)
+    result = answer_mod.answer_question("q", provider="local")
+    assert result.faithful is False
+    assert captured["n"] == 1
+    assert captured["provider"] == "local"
+
+
+def test_on_status_receives_pipeline_events(monkeypatch):
+    import rag.answer as answer_mod
+
+    monkeypatch.setattr(settings, "grading_enabled", True)
+    monkeypatch.setattr(settings, "faithfulness_enabled", True)
+    monkeypatch.setattr(answer_mod, "retrieve",
+                        lambda q, store=None: [_chunk(), _chunk(pid="p2")])
+    monkeypatch.setattr(answer_mod, "grade_chunks",
+                        lambda q, chunks, provider=None: chunks[:1])
+    monkeypatch.setattr(answer_mod, "check_faithfulness", lambda *a, **k: True)
+    monkeypatch.setattr(answer_mod, "generate", lambda *a, **k: _fake_llm("A."))
+    statuses = []
+    answer_mod.answer_question("q", on_status=statuses.append)
+    assert statuses == ["grading 2 chunks…", "1 of 2 chunks relevant",
+                        "verifying citations…"]

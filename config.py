@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     sparse_model: str = "Qdrant/bm25"
     rewrite_enabled: bool = False  # needs an LLM key; off until keys exist
 
+    # Guardrails (phase 5) — same flag pattern so eval ablation can isolate each
+    grading_enabled: bool = True
+    faithfulness_enabled: bool = True
+
     # Agent
     agent_max_steps: int = 8
     agent_mode: Literal["single", "multi"] = "single"

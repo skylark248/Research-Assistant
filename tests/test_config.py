@@ -63,3 +63,11 @@ def test_local_is_valid_llm_provider():
     from config import Settings
 
     assert Settings(_env_file=None, llm_provider="local").llm_provider == "local"
+
+
+def test_phase5_guardrail_flags_default_on():
+    from config import Settings
+
+    s = Settings(_env_file=None)
+    assert s.grading_enabled is True
+    assert s.faithfulness_enabled is True
