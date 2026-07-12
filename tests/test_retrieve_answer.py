@@ -204,7 +204,7 @@ def test_retry_fires_once_on_zero_survivors(monkeypatch):
     monkeypatch.setattr(settings, "faithfulness_enabled", False)
     retrievals = []
     monkeypatch.setattr(answer_mod, "retrieve",
-                        lambda q, store=None: retrievals.append(q) or [_chunk()])
+                        lambda q, store=None, rewrite=None: retrievals.append(q) or [_chunk()])
     grades = iter([[], [_chunk()]])  # first grade: nothing; retry grade: survivor
     monkeypatch.setattr(answer_mod, "grade_chunks",
                         lambda q, chunks, provider=None: next(grades))
@@ -222,7 +222,7 @@ def test_honest_degradation_skips_generate(monkeypatch):
 
     monkeypatch.setattr(settings, "grading_enabled", True)
     monkeypatch.setattr(settings, "faithfulness_enabled", False)
-    monkeypatch.setattr(answer_mod, "retrieve", lambda q, store=None: [_chunk()])
+    monkeypatch.setattr(answer_mod, "retrieve", lambda q, store=None, rewrite=None: [_chunk()])
     monkeypatch.setattr(answer_mod, "grade_chunks",
                         lambda q, chunks, provider=None: [])
     monkeypatch.setattr(answer_mod, "retry_rewrite_query",
@@ -303,3 +303,39 @@ def test_on_status_receives_pipeline_events(monkeypatch):
     answer_mod.answer_question("q", on_status=statuses.append)
     assert statuses == ["grading 2 chunks…", "1 of 2 chunks relevant",
                         "verifying citations…"]
+
+
+def test_retrieve_rewrite_param_overrides_setting(monkeypatch):
+    retrieve_mod = _patch_pipeline(monkeypatch, mode="dense", rewrite_on=True)
+
+    def boom(q):
+        raise AssertionError("rewrite_query must not run when rewrite=False")
+
+    monkeypatch.setattr(retrieve_mod, "rewrite_query", boom)
+    retrieve_mod.retrieve("q", top_k=3, store=CapturingStore(), rewrite=False)
+
+
+def test_retry_retrieval_never_rewrites_again(monkeypatch):
+    import rag.answer as answer_mod
+
+    monkeypatch.setattr(settings, "grading_enabled", True)
+    monkeypatch.setattr(settings, "faithfulness_enabled", False)
+    monkeypatch.setattr(settings, "rewrite_enabled", True)
+    calls = []
+
+    def fake_retrieve(q, store=None, rewrite=None):
+        calls.append({"q": q, "rewrite": rewrite})
+        return [_chunk()]
+
+    monkeypatch.setattr(answer_mod, "retrieve", fake_retrieve)
+    grades = iter([[], [_chunk()]])
+    monkeypatch.setattr(answer_mod, "grade_chunks",
+                        lambda q, chunks, provider=None: next(grades))
+    monkeypatch.setattr(answer_mod, "retry_rewrite_query",
+                        lambda q, provider=None: "alt query")
+    monkeypatch.setattr(answer_mod, "generate",
+                        lambda *a, **k: _fake_llm("A [1706.03762]."))
+
+    answer_mod.answer_question("orig")
+    assert calls[0]["rewrite"] is None            # first retrieval: global setting
+    assert calls[1] == {"q": "alt query", "rewrite": False}  # retry: never re-rewritten

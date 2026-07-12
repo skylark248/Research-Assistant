@@ -436,3 +436,40 @@ async def test_rag_query_statuses_forwarded_to_on_event(monkeypatch):
                          "steps": 0, "citations": []})
     status_texts = [e["text"] for e in events if e["event"] == "status"]
     assert "grading 2 chunks…" in status_texts
+
+
+async def test_faithful_is_per_turn_not_sticky(monkeypatch, tmp_path):
+    """Turn 1 unfaithful, turn 2 clean → turn 2's result must NOT be poisoned."""
+    import agents.graph as graph_mod
+    from config import settings
+    from rag.answer import RagAnswer
+
+    monkeypatch.setattr(settings, "checkpoint_db", str(tmp_path / "cp.db"))
+    turn_verdicts = iter([False, True])
+
+    def fake_answer(q, store=None, provider=None, on_status=None):
+        return RagAnswer(text="A [p].", sources=["p"],
+                         faithful=next(turn_verdicts))
+
+    monkeypatch.setattr(graph_mod, "answer_question", fake_answer)
+    _scripted_generate(monkeypatch, [
+        LLMResponse(tool_calls=[ToolCall(id="t1", name="rag_query",
+                                         input={"question": "a"})]),
+        LLMResponse(text="turn one answer"),
+        LLMResponse(tool_calls=[ToolCall(id="t2", name="rag_query",
+                                         input={"question": "b"})]),
+        LLMResponse(text="turn two answer"),
+    ])
+
+    class FakeToolboxCM:
+        async def __aenter__(self):
+            return FakeToolbox()
+
+        async def __aexit__(self, *exc):
+            return None
+
+    monkeypatch.setattr(graph_mod, "MCPToolbox", FakeToolboxCM)
+    r1 = await graph_mod.run_agent("q1", thread_id="t-scope")
+    r2 = await graph_mod.run_agent("q2", thread_id="t-scope")
+    assert r1.faithful is False
+    assert r2.faithful is True  # per-turn, not whole-thread AND

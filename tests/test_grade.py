@@ -88,3 +88,39 @@ def test_grade_tolerates_format_variants(monkeypatch):
     _patch_generate(monkeypatch, text="1. YES\n 2) no\n3 - yes")
     kept = grade_chunks("q", [_chunk(pid="p1"), _chunk(pid="p2"), _chunk(pid="p3")])
     assert [c.paper_id for c in kept] == ["p1", "p3"]
+
+
+def test_grade_bare_lines_map_positionally_when_count_matches(monkeypatch):
+    from rag.grade import grade_chunks
+
+    # the live-run incident: verdicts without line numbers, one per chunk
+    _patch_generate(monkeypatch, text="no\nno\nno\nno\nno")
+    chunks = [_chunk(pid=f"p{i}") for i in range(5)]
+    assert grade_chunks("q", chunks) == []  # all dropped → triggers retry
+
+
+def test_grade_bare_lines_mixed_verdicts(monkeypatch):
+    from rag.grade import grade_chunks
+
+    _patch_generate(monkeypatch, text="Yes.\nno\nYES")
+    chunks = [_chunk(pid="p1"), _chunk(pid="p2"), _chunk(pid="p3")]
+    kept = grade_chunks("q", chunks)
+    assert [c.paper_id for c in kept] == ["p1", "p3"]
+
+
+def test_grade_bare_line_count_mismatch_fails_open(monkeypatch):
+    from rag.grade import grade_chunks
+
+    _patch_generate(monkeypatch, text="yes\nno")  # 2 verdicts, 3 chunks
+    chunks = [_chunk(pid="p1"), _chunk(pid="p2"), _chunk(pid="p3")]
+    assert grade_chunks("q", chunks) == chunks
+
+
+def test_grade_numbered_format_takes_precedence_over_bare(monkeypatch):
+    from rag.grade import grade_chunks
+
+    # numbered verdicts present → bare-line fallback must not run
+    _patch_generate(monkeypatch, text="1: yes\n2: no\nno")
+    chunks = [_chunk(pid="p1"), _chunk(pid="p2")]
+    kept = grade_chunks("q", chunks)
+    assert [c.paper_id for c in kept] == ["p1"]

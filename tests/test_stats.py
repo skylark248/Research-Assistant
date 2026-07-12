@@ -48,3 +48,50 @@ def test_narrower_alpha_widens_interval():
     lo50, hi50 = bootstrap_ci(values, alpha=0.50, seed=0)
     # 95% interval must contain the 50% interval
     assert lo95 <= lo50 and hi50 <= hi95
+
+
+def test_kappa_perfect_agreement_is_one():
+    from eval.stats import weighted_kappa
+
+    assert weighted_kappa([1, 2, 3, 4, 5], [1, 2, 3, 4, 5]) == pytest.approx(1.0)
+
+
+def test_kappa_observed_equals_expected_is_zero():
+    from eval.stats import weighted_kappa
+
+    # observed disagreement exactly matches chance for these marginals
+    assert weighted_kappa([1, 1, 2, 2], [1, 2, 1, 2]) == pytest.approx(0.0)
+
+
+def test_kappa_quadratic_weighting_distinguishes_near_from_far_miss():
+    from eval.stats import weighted_kappa
+
+    a = [1, 5, 1, 5]
+    near = weighted_kappa(a, [2, 4, 2, 4])  # off by one each time
+    far = weighted_kappa(a, [5, 1, 5, 1])   # maximally wrong each time
+    assert near == pytest.approx(0.8)
+    assert far == pytest.approx(-1.0)
+    # unweighted agreement would score both identically (zero exact matches);
+    # the quadratic weights are what separate them
+    assert near > far
+
+
+def test_kappa_constant_equal_raters_is_one_by_convention():
+    from eval.stats import weighted_kappa
+
+    # zero expected disagreement → denominator 0 → 1.0 by convention
+    assert weighted_kappa([3, 3, 3], [3, 3, 3]) == pytest.approx(1.0)
+
+
+def test_kappa_length_mismatch_raises():
+    from eval.stats import weighted_kappa
+
+    with pytest.raises(ValueError):
+        weighted_kappa([1, 2], [1, 2, 3])
+
+
+def test_kappa_too_few_pairs_raises():
+    from eval.stats import weighted_kappa
+
+    with pytest.raises(ValueError):
+        weighted_kappa([3], [3])

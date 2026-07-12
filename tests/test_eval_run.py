@@ -341,3 +341,50 @@ def test_ablation_cell_renders_half_width(capsys):
     out = capsys.readouterr().out
     assert "0.67 ±0.12" in out   # (0.83 - 0.59) / 2
     assert "1.00 ±0.00" in out
+
+
+def test_rows_carry_synthetic_flag_and_subsets_split(monkeypatch, tmp_path):
+    run_mod = _fake_eval_env(monkeypatch, tmp_path)
+
+    golden = tmp_path / "golden.json"
+    golden.write_text(json.dumps([_item("g1"),
+                                  {**_item("s1"), "synthetic": True}]))
+    monkeypatch.setattr(run_mod, "DEFAULT_DATASET", str(golden))
+    monkeypatch.setattr(run_mod, "SYNTHETIC_DATASET", str(tmp_path / "nope.json"))
+
+    report = run_mod.run_eval(report_path=str(tmp_path / "r.json"))
+    assert [r["synthetic"] for r in report["rows"]] == [False, True]
+    subsets = report["summary"]["subsets"]
+    assert subsets["hand"]["n"] == 1
+    assert subsets["synthetic"]["n"] == 1
+    assert set(subsets["hand"]) == {"n", "avg_precision", "avg_recall",
+                                    "avg_faithfulness", "avg_relevance",
+                                    "avg_citation_accuracy"}
+
+
+def test_subsets_omit_empty_subset(monkeypatch, tmp_path):
+    run_mod = _fake_eval_env(monkeypatch, tmp_path)
+
+    golden = tmp_path / "golden.json"
+    golden.write_text(json.dumps([_item("g1"), _item("g2")]))  # hand only
+    monkeypatch.setattr(run_mod, "DEFAULT_DATASET", str(golden))
+    monkeypatch.setattr(run_mod, "SYNTHETIC_DATASET", str(tmp_path / "nope.json"))
+
+    report = run_mod.run_eval(report_path=str(tmp_path / "r.json"))
+    assert list(report["summary"]["subsets"]) == ["hand"]
+
+
+def test_truthy_nonbool_synthetic_value_still_partitions(monkeypatch, tmp_path):
+    run_mod = _fake_eval_env(monkeypatch, tmp_path)
+
+    golden = tmp_path / "golden.json"
+    golden.write_text(json.dumps([_item("g1"),
+                                  {**_item("s1"), "synthetic": 1}]))  # int, not bool
+    monkeypatch.setattr(run_mod, "DEFAULT_DATASET", str(golden))
+    monkeypatch.setattr(run_mod, "SYNTHETIC_DATASET", str(tmp_path / "nope.json"))
+
+    report = run_mod.run_eval(report_path=str(tmp_path / "r.json"))
+    subsets = report["summary"]["subsets"]
+    # every row lands in exactly one subset — nothing vanishes
+    assert subsets["hand"]["n"] + subsets["synthetic"]["n"] == report["summary"]["n"] == 2
+    assert report["rows"][1]["synthetic"] is True  # normalized to real bool

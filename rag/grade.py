@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 _VERDICT_LINE = re.compile(r"^\s*(\d+)\s*[:.)\-]\s*(yes|no)\b",
                            re.IGNORECASE | re.MULTILINE)
 
+# Fallback for models that answer one bare verdict per line without numbers
+# ("no\nno\nno…") — accepted only when the count matches the chunk count.
+_BARE_LINE = re.compile(r"^\s*(yes|no)\s*[.,!]?\s*$",
+                        re.IGNORECASE | re.MULTILINE)
+
 
 def _build_prompt(question: str, chunks: list[ScoredChunk]) -> str:
     parts = [f"{i}. [paper {c.paper_id} — {c.title}]\n{c.text}"
@@ -44,6 +49,9 @@ def grade_chunks(question: str, chunks: list[ScoredChunk],
         return chunks
     verdicts = {int(n): v.lower() == "yes" for n, v in _VERDICT_LINE.findall(resp.text)}
     if not verdicts:
+        bare = [m.lower() == "yes" for m in _BARE_LINE.findall(resp.text)]
+        if len(bare) == len(chunks):
+            return [c for c, keep in zip(chunks, bare) if keep]
         logger.warning("Grader output unparseable; keeping all chunks: %r",
                        resp.text[:200])
         return chunks

@@ -52,7 +52,9 @@ def answer_question(
             retry_query = retry_rewrite_query(question, provider=provider)
             if retry_query != question:  # rewrite failed open → retry would repeat
                 notify("retrying with rewritten query…")
-                retried = retrieve(retry_query, store=store)
+                # retry_query is already a rewrite — re-entering the rewrite
+                # stage would rewrite the rewrite and drift further
+                retried = retrieve(retry_query, store=store, rewrite=False)
                 # graded against the ORIGINAL question, like reranking
                 graded = grade_chunks(question, retried, provider=provider)
                 notify(f"{len(graded)} of {len(retried)} chunks relevant")

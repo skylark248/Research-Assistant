@@ -42,10 +42,10 @@ class AgentResult(NamedTuple):
     # False when no checkpoint exists under the caller's thread_id (multi-mode
     # decomposed plans) — the API skips thread registration in that case.
     checkpointed: bool = True
-    # AND of per-rag_query faithfulness verdicts for the whole thread
-    # (verdicts, like citations, accumulate across a thread's turns):
-    # any False → False; else any None → None; else True. None when no
-    # rag_query ran or the check is disabled.
+    # AND of THIS TURN's per-rag_query faithfulness verdicts (the channel
+    # accumulates across turns like citations; run_agent slices off prior
+    # turns): any False → False; else any None → None; else True. None when
+    # no rag_query ran this turn or the check is disabled.
     faithful: bool | None = None
 
 
@@ -255,13 +255,20 @@ async def run_agent(question: str, thread_id: str | None = None,
             AsyncSqliteSaver.from_conn_string(settings.checkpoint_db) as saver:
         graph = build_graph(toolbox, checkpointer=saver, provider=provider,
                             on_event=on_event)
+        config = {"recursion_limit": settings.agent_max_steps * 2 + 6,
+                  "configurable": {"thread_id": thread_id}}
+        # verdicts accumulate across a thread's turns (channel uses
+        # operator.add, like citations); the badge is a per-message claim,
+        # so count what was already there and judge only this turn's slice
+        prior = await graph.aget_state(config)
+        n_prior = len((prior.values or {}).get("verdicts", []))
         state = await graph.ainvoke(
             {"messages": [{"role": "user", "content": question}], "steps": 0,
              "citations": [], "verdicts": []},
-            config={"recursion_limit": settings.agent_max_steps * 2 + 6,
-                    "configurable": {"thread_id": thread_id}},
+            config=config,
         )
         text = final_text(state)
         return AgentResult(text=text or STEP_LIMIT_MESSAGE,
                            citations=_dedupe(state.get("citations", [])),
-                           faithful=_combine_verdicts(state.get("verdicts", [])))
+                           faithful=_combine_verdicts(
+                               state.get("verdicts", [])[n_prior:]))

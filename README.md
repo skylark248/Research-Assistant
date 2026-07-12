@@ -4,7 +4,7 @@ Learning project covering LLM APIs + prompting, RAG, evaluation, and agents + MC
 Ingests arXiv papers, answers questions grounded in them with [paper_id] citations,
 and autonomously fetches papers it doesn't have yet.
 
-## Status: complete (all 6 phases shipped)
+## Status: complete (all 7 phases shipped)
 
 | Phase | Delivered |
 |-------|-----------|
@@ -14,6 +14,7 @@ and autonomously fetches papers it doesn't have yet.
 | 4 | Per-request provider toggle in the UI, provider availability checks, SSE streaming (activity + tokens), citation chips, persistent thread sidebar |
 | 5 | Corrective RAG (LLM chunk grading + one rewritten-query retry + honest degradation) and a citation-faithfulness guardrail with an "unverified citations" badge in the UI |
 | 6 | Synthetic eval generation (LLM question/gist from ingested chunks, fail-closed self-check, grows golden set 3 → 50+) and 95% bootstrap CIs on every eval metric and ablation cell |
+| 7 | Judge calibration: blind human-labeling CLI, judge-vs-human agreement (quadratic-weighted kappa + MAE with bootstrap CIs), test-retest consistency mode |
 
 Design specs and implementation plans for each phase live in
 `docs/superpowers/specs/` and `docs/superpowers/plans/`. Known limitation:
@@ -73,6 +74,12 @@ uv run python -m eval.generate --count 50
 # Run eval on ONLY the hand-written set
 uv run python -m eval.run --dataset eval/golden.json
 
+# Calibrate the judge: hand-label ~20 sampled answers (blind), then measure
+# judge-vs-human agreement; --consistency re-judges each item (live LLM)
+uv run python -m eval.calibrate label
+uv run python -m eval.calibrate report
+uv run python -m eval.calibrate report --consistency
+
 # Upgrading from phase 1? The collection schema changed (named dense+sparse
 # vectors) — recreate it and re-ingest:
 uv run python -m rag.migrate --yes
@@ -84,6 +91,8 @@ read against their noise floor.
 Caveat: synthetic items share a generator with the LLM judge and are sampled
 from the ingested corpus, so absolute scores on the mixed set skew friendly —
 trust the ablation deltas, not the absolute numbers.
+`eval.calibrate` quantifies the judge itself — with one annotator and small n,
+treat its kappa as a sanity check, not a certification.
 
 Retrieval is a staged pipeline — `[rewrite] → embed → search (dense|sparse|hybrid) → [rerank] → [grade → retry once]` —
 controlled by `.env` flags (`RETRIEVAL_MODE`, `RERANK_ENABLED`, `REWRITE_ENABLED`, `GRADING_ENABLED`; see `config.py`).
@@ -91,8 +100,8 @@ BM25 sparse search and reranking run on local ONNX models — no API keys needed
 After answering, `FAITHFULNESS_ENABLED` runs a citation-faithfulness check; an
 unsupported answer gets an "⚠ citations unverified" badge in the UI (live
 responses only — verdicts aren't persisted, so restored threads never show it).
-The verdict accumulates over the whole conversation — once any turn in a thread
-fails verification, the badge appears on subsequent replies in that thread too.
+The verdict is per-message: each reply's badge reflects only the rag_query
+calls behind that reply, not earlier turns.
 Both guardrails fail open and add 1–3 LLM calls per request — turn them off on
 slow local models if latency hurts.
 Chat is multi-turn: the UI carries a `thread_id`, history is checkpointed to
