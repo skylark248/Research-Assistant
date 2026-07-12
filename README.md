@@ -4,7 +4,7 @@ Learning project covering LLM APIs + prompting, RAG, evaluation, and agents + MC
 Ingests arXiv papers, answers questions grounded in them with [paper_id] citations,
 and autonomously fetches papers it doesn't have yet.
 
-## Status: complete (all 5 phases shipped)
+## Status: complete (all 6 phases shipped)
 
 | Phase | Delivered |
 |-------|-----------|
@@ -13,6 +13,7 @@ and autonomously fetches papers it doesn't have yet.
 | 3 | Fully local, no-keys operation via Ollama (`qwen2.5:3b`) + local embeddings; live-validated end to end |
 | 4 | Per-request provider toggle in the UI, provider availability checks, SSE streaming (activity + tokens), citation chips, persistent thread sidebar |
 | 5 | Corrective RAG (LLM chunk grading + one rewritten-query retry + honest degradation) and a citation-faithfulness guardrail with an "unverified citations" badge in the UI |
+| 6 | Synthetic eval generation (LLM question/gist from ingested chunks, fail-closed self-check, grows golden set 3 → 50+) and 95% bootstrap CIs on every eval metric and ablation cell |
 
 Design specs and implementation plans for each phase live in
 `docs/superpowers/specs/` and `docs/superpowers/plans/`. Known limitation:
@@ -63,10 +64,21 @@ uv run python -m eval.run
 # Retrieval ablation: golden dataset across dense/sparse/hybrid/rerank/rewrite presets
 uv run python -m eval.run --ablation
 
+# Generate synthetic eval items from ingested chunks (grows the golden set;
+# eval.run picks the file up automatically)
+uv run python -m eval.generate --count 50
+
+# Run eval on ONLY the hand-written set
+uv run python -m eval.run --dataset eval/golden.json
+
 # Upgrading from phase 1? The collection schema changed (named dense+sparse
 # vectors) — recreate it and re-ingest:
 uv run python -m rag.migrate --yes
 ```
+
+Eval metrics print with 95% bootstrap confidence intervals — `0.67 [0.51, 0.82]`
+in the summary, `0.67 ±0.08` per ablation cell — so preset differences can be
+read against their noise floor.
 
 Retrieval is a staged pipeline — `[rewrite] → embed → search (dense|sparse|hybrid) → [rerank] → [grade → retry once]` —
 controlled by `.env` flags (`RETRIEVAL_MODE`, `RERANK_ENABLED`, `REWRITE_ENABLED`, `GRADING_ENABLED`; see `config.py`).
