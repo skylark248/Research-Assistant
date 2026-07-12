@@ -137,3 +137,103 @@ def test_label_missing_report_fails_fast(tmp_path):
     with pytest.raises(SystemExit, match="eval.run"):
         run_label(str(tmp_path / "nope.json"), str(tmp_path / "l.json"),
                   n=20, seed=0)
+
+
+def _labels_file(tmp_path, rows):
+    p = tmp_path / "labels.json"
+    p.write_text(json.dumps(rows))
+    return str(p)
+
+
+def _label_row(q, jf, jr, jc, hf, hr, hc):
+    return {"question": q, "answer": f"a-{q}",
+            "judge": {"faithfulness": jf, "relevance": jr,
+                      "citation_accuracy": jc},
+            "human": {"faithfulness": hf, "relevance": hr,
+                      "citation_accuracy": hc},
+            "labeled_at": "2026-07-12T14:00:00"}
+
+
+PERFECT = [
+    _label_row("q1", 1, 2, 3, 1, 2, 3),
+    _label_row("q2", 5, 4, 3, 5, 4, 3),
+    _label_row("q3", 2, 2, 2, 2, 2, 2),
+]
+
+
+def test_report_perfect_agreement(tmp_path, capsys):
+    from eval.calibrate import run_report
+
+    out = run_report(_labels_file(tmp_path, PERFECT), consistency=False)
+    for d in ["faithfulness", "relevance", "citation_accuracy"]:
+        assert out[d]["kappa"] == 1.0
+        assert out[d]["mae"] == 0.0
+    printed = capsys.readouterr().out
+    assert "near-perfect" in printed
+    assert "Caveats" in printed
+    assert "weighted kappa" in printed
+
+
+def test_report_bands(tmp_path):
+    from eval.calibrate import _band
+
+    assert _band(0.85) == "near-perfect"
+    assert _band(0.7) == "substantial"
+    assert _band(0.5) == "moderate"
+    assert _band(0.3) == "fair"
+    assert _band(0.1) == "poor"
+    assert _band(-0.5) == "poor"
+
+
+def test_report_fails_fast_below_two_labels(tmp_path):
+    import pytest
+
+    from eval.calibrate import run_report
+
+    path = _labels_file(tmp_path, PERFECT[:1])
+    with pytest.raises(SystemExit, match="2"):
+        run_report(path, consistency=False)
+
+
+def test_kappa_ci_deterministic_and_brackets_point_estimate(tmp_path):
+    from eval.calibrate import _kappa_ci
+    from eval.stats import weighted_kappa
+
+    judge = [1, 2, 3, 4, 5, 3, 2, 4]
+    human = [2, 2, 3, 5, 4, 3, 1, 4]
+    lo, hi = _kappa_ci(judge, human, seed=0)
+    assert (lo, hi) == _kappa_ci(judge, human, seed=0)
+    assert lo <= weighted_kappa(judge, human) <= hi
+
+
+def test_consistency_rejudges_and_reports_kappa(monkeypatch, tmp_path, capsys):
+    import eval.calibrate as cal
+    from eval.judge import JudgeScores
+    from rag.store import ScoredChunk
+
+    labels = [
+        _label_row("q1", 4, 5, 2, 3, 5, 2),
+        _label_row("q2", 3, 4, 2, 3, 4, 3),
+        _label_row("q3", 5, 5, 1, 4, 5, 1),
+    ]
+    path = _labels_file(tmp_path, labels)
+    monkeypatch.setattr(cal, "_load_dataset", lambda p: [])
+    chunk = ScoredChunk(paper_id="1706.03762", title="T", text="ctx", score=0.9)
+    monkeypatch.setattr(cal, "retrieve", lambda q: [chunk])
+    calls = []
+
+    def fake_judge(question, answer, expected_gist, contexts):
+        calls.append(question)
+        if question == "q2":
+            raise RuntimeError("judge exploded")  # skipped, counted
+        return JudgeScores(faithfulness=4, relevance=5, citation_accuracy=2,
+                           reasoning="r")
+
+    monkeypatch.setattr(cal, "judge_answer", fake_judge)
+    out = cal.run_report(path, consistency=True)
+    assert calls == ["q1", "q2", "q3"]
+    assert out["consistency"]["failures"] == 1
+    # q1 and q3 re-judged: relevance run-1 [5, 5] vs run-2 [5, 5] → kappa 1.0
+    assert out["consistency"]["relevance"] == 1.0
+    printed = capsys.readouterr().out
+    assert "re-retrieved" in printed  # retrieval-drift disclosure
