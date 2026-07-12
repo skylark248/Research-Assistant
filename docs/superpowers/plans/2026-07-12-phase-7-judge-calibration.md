@@ -1,8 +1,8 @@
-# Phase 7: Judge Calibration Implementation Plan
+# Phase 7: Judge Calibration + Eval-Trust Hardening Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Measure the LLM judge itself: an interactive blind-labeling CLI produces human ground truth, then quadratic-weighted Cohen's kappa + MAE (with bootstrap CIs) and an opt-in test-retest consistency mode quantify how far the judge can be trusted.
+**Goal:** Measure the LLM judge itself (blind human labels → weighted kappa + MAE + test-retest consistency), plus four eval-trust hardening fixes: per-subset metric slicing, grader bare-line tolerance, per-turn verdict scoping, and a retry double-rewrite guard. Tasks 1-4 = calibration; Tasks 5-8 = hardening.
 
 **Architecture:** One new CLI module `eval/calibrate.py` (subcommands `label` / `report`), one new ordinal-agreement function `weighted_kappa` in `eval/stats.py`. Read-only over `report.json`; human labels live in committed, self-contained `eval/human-labels.json`. Spec: `docs/superpowers/specs/2026-07-12-phase-7-judge-calibration-design.md`.
 
@@ -812,6 +812,422 @@ Expected: all pass, local test deselected (deselected count 16 → 17)
 ```bash
 git add tests/test_local_calibrate.py README.md
 git commit -m "test: real-Ollama consistency smoke test; docs: phase 7 README"
+```
+
+---
+
+### Task 5: Per-subset metric slicing (`eval/run.py`)
+
+**Files:**
+- Modify: `eval/run.py`
+- Modify: `tests/test_eval_run.py` (append tests)
+
+**Interfaces:**
+- Consumes: existing `run_eval` internals; dataset items may carry `"synthetic": true` (phase 6 generator).
+- Produces: report rows gain `"synthetic": bool`; summary gains `"subsets": {"hand": {...}, "synthetic": {...}}` (each `{n, avg_precision, avg_recall, avg_faithfulness, avg_relevance, avg_citation_accuracy}`, subset omitted when empty). No per-subset CIs. Ablation table unchanged.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `tests/test_eval_run.py`:
+
+```python
+def test_rows_carry_synthetic_flag_and_subsets_split(monkeypatch, tmp_path):
+    run_mod = _fake_eval_env(monkeypatch, tmp_path)
+
+    golden = tmp_path / "golden.json"
+    golden.write_text(json.dumps([_item("g1"),
+                                  {**_item("s1"), "synthetic": True}]))
+    monkeypatch.setattr(run_mod, "DEFAULT_DATASET", str(golden))
+    monkeypatch.setattr(run_mod, "SYNTHETIC_DATASET", str(tmp_path / "nope.json"))
+
+    report = run_mod.run_eval(report_path=str(tmp_path / "r.json"))
+    assert [r["synthetic"] for r in report["rows"]] == [False, True]
+    subsets = report["summary"]["subsets"]
+    assert subsets["hand"]["n"] == 1
+    assert subsets["synthetic"]["n"] == 1
+    assert set(subsets["hand"]) == {"n", "avg_precision", "avg_recall",
+                                    "avg_faithfulness", "avg_relevance",
+                                    "avg_citation_accuracy"}
+
+
+def test_subsets_omit_empty_subset(monkeypatch, tmp_path):
+    run_mod = _fake_eval_env(monkeypatch, tmp_path)
+
+    golden = tmp_path / "golden.json"
+    golden.write_text(json.dumps([_item("g1"), _item("g2")]))  # hand only
+    monkeypatch.setattr(run_mod, "DEFAULT_DATASET", str(golden))
+    monkeypatch.setattr(run_mod, "SYNTHETIC_DATASET", str(tmp_path / "nope.json"))
+
+    report = run_mod.run_eval(report_path=str(tmp_path / "r.json"))
+    assert list(report["summary"]["subsets"]) == ["hand"]
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `uv run pytest tests/test_eval_run.py -v`
+Expected: new tests FAIL (`KeyError: 'synthetic'` / `'subsets'`); existing pass
+
+- [ ] **Step 3: Implement in `eval/run.py`**
+
+3a. In `run_eval`, inside `rows.append({...})`, after `"faithful": answer.faithful,`:
+
+```python
+            "synthetic": item.get("synthetic", False),
+```
+
+3b. Add above `run_eval`:
+
+```python
+def _subset_summary(rows: list[dict]) -> dict:
+    """Per-provenance averages (hand-written vs synthetic); empty subsets omitted.
+    No per-subset CIs — the hand subset is tiny and they would read as noise."""
+    subsets: dict[str, dict] = {}
+    for name, is_synthetic in (("hand", False), ("synthetic", True)):
+        subset_rows = [r for r in rows
+                       if r.get("synthetic", False) is is_synthetic]
+        if not subset_rows:
+            continue
+        subsets[name] = {
+            "n": len(subset_rows),
+            "avg_precision": mean(r["precision"] for r in subset_rows),
+            "avg_recall": mean(r["recall"] for r in subset_rows),
+            "avg_faithfulness": mean(r["faithfulness"] for r in subset_rows),
+            "avg_relevance": mean(r["relevance"] for r in subset_rows),
+            "avg_citation_accuracy": mean(r["citation_accuracy"]
+                                          for r in subset_rows),
+        }
+    return subsets
+```
+
+3c. In the `summary = {...}` dict, after `"faithfulness_rate": ...,`:
+
+```python
+        "subsets": _subset_summary(rows),
+```
+
+3d. In `main()`, after the verified-answers block, print the subset lines:
+
+```python
+    for name, sub in s.get("subsets", {}).items():
+        print(f"  [{name}] n={sub['n']}  precision {sub['avg_precision']:.2f}  "
+              f"recall {sub['avg_recall']:.2f}  faithfulness {sub['avg_faithfulness']:.2f}  "
+              f"relevance {sub['avg_relevance']:.2f}  citations {sub['avg_citation_accuracy']:.2f}")
+```
+
+- [ ] **Step 4: Run tests, full suite, commit**
+
+Run: `uv run pytest tests/test_eval_run.py -v` then `uv run pytest`
+Expected: all pass
+
+```bash
+git add eval/run.py tests/test_eval_run.py
+git commit -m "feat: per-subset (hand vs synthetic) metric slicing in eval summary"
+```
+
+---
+
+### Task 6: Grader bare-line tolerance (`rag/grade.py`)
+
+**Files:**
+- Modify: `rag/grade.py`
+- Modify: `tests/test_grade.py` (append tests)
+
+**Interfaces:**
+- Consumes: existing `grade_chunks` internals.
+- Produces: unchanged signature; new parsing fallback only. Numbered format always takes precedence.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `tests/test_grade.py`:
+
+```python
+def test_grade_bare_lines_map_positionally_when_count_matches(monkeypatch):
+    from rag.grade import grade_chunks
+
+    # the live-run incident: verdicts without line numbers, one per chunk
+    _patch_generate(monkeypatch, text="no\nno\nno\nno\nno")
+    chunks = [_chunk(pid=f"p{i}") for i in range(5)]
+    assert grade_chunks("q", chunks) == []  # all dropped → triggers retry
+
+
+def test_grade_bare_lines_mixed_verdicts(monkeypatch):
+    from rag.grade import grade_chunks
+
+    _patch_generate(monkeypatch, text="Yes.\nno\nYES")
+    chunks = [_chunk(pid="p1"), _chunk(pid="p2"), _chunk(pid="p3")]
+    kept = grade_chunks("q", chunks)
+    assert [c.paper_id for c in kept] == ["p1", "p3"]
+
+
+def test_grade_bare_line_count_mismatch_fails_open(monkeypatch):
+    from rag.grade import grade_chunks
+
+    _patch_generate(monkeypatch, text="yes\nno")  # 2 verdicts, 3 chunks
+    chunks = [_chunk(pid="p1"), _chunk(pid="p2"), _chunk(pid="p3")]
+    assert grade_chunks("q", chunks) == chunks
+
+
+def test_grade_numbered_format_takes_precedence_over_bare(monkeypatch):
+    from rag.grade import grade_chunks
+
+    # numbered verdicts present → bare-line fallback must not run
+    _patch_generate(monkeypatch, text="1: yes\n2: no\nno")
+    chunks = [_chunk(pid="p1"), _chunk(pid="p2")]
+    kept = grade_chunks("q", chunks)
+    assert [c.paper_id for c in kept] == ["p1"]
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `uv run pytest tests/test_grade.py -v`
+Expected: first three new tests FAIL (bare lines currently unparseable → all kept); precedence test passes already — keep it as a regression guard
+
+- [ ] **Step 3: Implement in `rag/grade.py`**
+
+3a. Add below `_VERDICT_LINE`:
+
+```python
+# Fallback for models that answer one bare verdict per line without numbers
+# ("no\nno\nno…") — accepted only when the count matches the chunk count.
+_BARE_LINE = re.compile(r"^\s*(yes|no)\s*[.,!]?\s*$",
+                        re.IGNORECASE | re.MULTILINE)
+```
+
+3b. In `grade_chunks`, replace the `if not verdicts:` block:
+
+```python
+    if not verdicts:
+        bare = [m.lower() == "yes" for m in _BARE_LINE.findall(resp.text)]
+        if len(bare) == len(chunks):
+            return [c for c, keep in zip(chunks, bare) if keep]
+        logger.warning("Grader output unparseable; keeping all chunks: %r",
+                       resp.text[:200])
+        return chunks
+```
+
+- [ ] **Step 4: Run tests, full suite, commit**
+
+Run: `uv run pytest tests/test_grade.py -v` then `uv run pytest`
+Expected: all pass
+
+```bash
+git add rag/grade.py tests/test_grade.py
+git commit -m "feat: positional bare-line fallback in chunk grader parsing"
+```
+
+---
+
+### Task 7: Per-turn verdict scoping (`agents/graph.py`)
+
+**Files:**
+- Modify: `agents/graph.py` (run_agent only)
+- Modify: `tests/test_graph.py` (append test)
+- Modify: `README.md` (badge wording)
+
+**Interfaces:**
+- Consumes: existing `verdicts` channel + `_combine_verdicts`.
+- Produces: `AgentResult.faithful` now reflects ONLY the current turn's rag_query verdicts. Signature unchanged. `agents/multi.py` needs no change (researchers run fresh threads).
+
+- [ ] **Step 1: Write the failing test**
+
+Append to `tests/test_graph.py`:
+
+```python
+async def test_faithful_is_per_turn_not_sticky(monkeypatch, tmp_path):
+    """Turn 1 unfaithful, turn 2 clean → turn 2's result must NOT be poisoned."""
+    import agents.graph as graph_mod
+    from config import settings
+    from rag.answer import RagAnswer
+
+    monkeypatch.setattr(settings, "checkpoint_db", str(tmp_path / "cp.db"))
+    turn_verdicts = iter([False, True])
+
+    def fake_answer(q, store=None, provider=None, on_status=None):
+        return RagAnswer(text="A [p].", sources=["p"],
+                         faithful=next(turn_verdicts))
+
+    monkeypatch.setattr(graph_mod, "answer_question", fake_answer)
+    _scripted_generate(monkeypatch, [
+        LLMResponse(tool_calls=[ToolCall(id="t1", name="rag_query",
+                                         input={"question": "a"})]),
+        LLMResponse(text="turn one answer"),
+        LLMResponse(tool_calls=[ToolCall(id="t2", name="rag_query",
+                                         input={"question": "b"})]),
+        LLMResponse(text="turn two answer"),
+    ])
+
+    class FakeToolboxCM:
+        async def __aenter__(self):
+            return FakeToolbox()
+
+        async def __aexit__(self, *exc):
+            return None
+
+    monkeypatch.setattr(graph_mod, "MCPToolbox", FakeToolboxCM)
+    r1 = await graph_mod.run_agent("q1", thread_id="t-scope")
+    r2 = await graph_mod.run_agent("q2", thread_id="t-scope")
+    assert r1.faithful is False
+    assert r2.faithful is True  # per-turn, not whole-thread AND
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `uv run pytest tests/test_graph.py::test_faithful_is_per_turn_not_sticky -v`
+Expected: FAIL — `r2.faithful` is `False` (sticky whole-thread AND)
+
+- [ ] **Step 3: Implement in `agents/graph.py`**
+
+In `run_agent`, snapshot the prior verdict count before invoking, and slice after. Replace the body between `graph = build_graph(...)` and the return with:
+
+```python
+        config = {"recursion_limit": settings.agent_max_steps * 2 + 6,
+                  "configurable": {"thread_id": thread_id}}
+        # verdicts accumulate across a thread's turns (channel uses
+        # operator.add, like citations); the badge is a per-message claim,
+        # so count what was already there and judge only this turn's slice
+        prior = await graph.aget_state(config)
+        n_prior = len((prior.values or {}).get("verdicts", []))
+        state = await graph.ainvoke(
+            {"messages": [{"role": "user", "content": question}], "steps": 0,
+             "citations": [], "verdicts": []},
+            config=config,
+        )
+        text = final_text(state)
+        return AgentResult(text=text or STEP_LIMIT_MESSAGE,
+                           citations=_dedupe(state.get("citations", [])),
+                           faithful=_combine_verdicts(
+                               state.get("verdicts", [])[n_prior:]))
+```
+
+Also update the `AgentResult.faithful` field comment (whole-thread → per-turn):
+
+```python
+    # AND of THIS TURN's per-rag_query faithfulness verdicts (the channel
+    # accumulates across turns like citations; run_agent slices off prior
+    # turns): any False → False; else any None → None; else True. None when
+    # no rag_query ran this turn or the check is disabled.
+    faithful: bool | None = None
+```
+
+- [ ] **Step 4: Update README badge wording**
+
+Replace the sticky-badge sentence:
+
+```markdown
+The verdict accumulates over the whole conversation — once any turn in a thread
+fails verification, the badge appears on subsequent replies in that thread too.
+```
+
+with:
+
+```markdown
+The verdict is per-message: each reply's badge reflects only the rag_query
+calls behind that reply, not earlier turns.
+```
+
+- [ ] **Step 5: Run tests, full suite, commit**
+
+Run: `uv run pytest tests/test_graph.py -v` then `uv run pytest`
+Expected: all pass (existing single-turn faithful tests unaffected — prior count 0 on fresh threads)
+
+```bash
+git add agents/graph.py tests/test_graph.py README.md
+git commit -m "fix: scope faithfulness verdict to the current turn, not the whole thread"
+```
+
+---
+
+### Task 8: Retry double-rewrite guard (`rag/retrieve.py` + `rag/answer.py`)
+
+**Files:**
+- Modify: `rag/retrieve.py`
+- Modify: `rag/answer.py` (one call site)
+- Modify: `tests/test_retrieve_answer.py` (append tests)
+
+**Interfaces:**
+- Consumes: existing `retrieve` / corrective-retry path.
+- Produces: `retrieve(question, top_k=None, store=None, rewrite: bool | None = None)` — `None` follows `settings.rewrite_enabled` (all existing callers unchanged); the corrective retry passes `rewrite=False`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `tests/test_retrieve_answer.py`:
+
+```python
+def test_retrieve_rewrite_param_overrides_setting(monkeypatch):
+    retrieve_mod = _patch_pipeline(monkeypatch, mode="dense", rewrite_on=True)
+
+    def boom(q):
+        raise AssertionError("rewrite_query must not run when rewrite=False")
+
+    monkeypatch.setattr(retrieve_mod, "rewrite_query", boom)
+    retrieve_mod.retrieve("q", top_k=3, store=CapturingStore(), rewrite=False)
+
+
+def test_retry_retrieval_never_rewrites_again(monkeypatch):
+    import rag.answer as answer_mod
+
+    monkeypatch.setattr(settings, "grading_enabled", True)
+    monkeypatch.setattr(settings, "faithfulness_enabled", False)
+    monkeypatch.setattr(settings, "rewrite_enabled", True)
+    calls = []
+
+    def fake_retrieve(q, store=None, rewrite=None):
+        calls.append({"q": q, "rewrite": rewrite})
+        return [_chunk()]
+
+    monkeypatch.setattr(answer_mod, "retrieve", fake_retrieve)
+    grades = iter([[], [_chunk()]])
+    monkeypatch.setattr(answer_mod, "grade_chunks",
+                        lambda q, chunks, provider=None: next(grades))
+    monkeypatch.setattr(answer_mod, "retry_rewrite_query",
+                        lambda q, provider=None: "alt query")
+    monkeypatch.setattr(answer_mod, "generate",
+                        lambda *a, **k: _fake_llm("A [1706.03762]."))
+
+    answer_mod.answer_question("orig")
+    assert calls[0]["rewrite"] is None            # first retrieval: global setting
+    assert calls[1] == {"q": "alt query", "rewrite": False}  # retry: never re-rewritten
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `uv run pytest tests/test_retrieve_answer.py -v`
+Expected: new tests FAIL — `TypeError: retrieve() got an unexpected keyword argument 'rewrite'`
+
+- [ ] **Step 3: Implement**
+
+3a. `rag/retrieve.py` — new signature and rewrite resolution:
+
+```python
+def retrieve(question: str, top_k: int | None = None,
+             store: VectorStore | None = None,
+             rewrite: bool | None = None) -> list[ScoredChunk]:
+    store = store or VectorStore()
+    top_k = top_k or settings.retrieval_top_k
+
+    if rewrite is None:  # callers can pin it; default follows the flag
+        rewrite = settings.rewrite_enabled
+    search_text = rewrite_query(question) if rewrite else question
+```
+
+(the rest of the function is unchanged.)
+
+3b. `rag/answer.py` — the retry call site becomes:
+
+```python
+                # retry_query is already a rewrite — re-entering the rewrite
+                # stage would rewrite the rewrite and drift further
+                retried = retrieve(retry_query, store=store, rewrite=False)
+```
+
+- [ ] **Step 4: Run tests, full suite, commit**
+
+Run: `uv run pytest tests/test_retrieve_answer.py -v` then `uv run pytest`
+Expected: all pass
+
+```bash
+git add rag/retrieve.py rag/answer.py tests/test_retrieve_answer.py
+git commit -m "fix: pin corrective-retry retrieval to skip the rewrite stage"
 ```
 
 ---
