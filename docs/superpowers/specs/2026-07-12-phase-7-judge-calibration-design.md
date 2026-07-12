@@ -86,8 +86,10 @@ eval.calibrate <cmd>`):
    (live LLM) and report test-retest weighted kappa per dimension
    (judge-run-1, from the stored labels, vs judge-run-2). Uses stored
    question/answer; contexts are re-retrieved via `rag.retrieve.retrieve`
-   (same path `eval.run` uses) — noted in output as "contexts re-retrieved;
-   retrieval drift folds into consistency".
+   AND re-graded via `rag.grade.grade_chunks` when `settings.grading_enabled`,
+   mirroring the same judging pipeline `eval.run`'s `run_eval` uses — noted
+   in output as "contexts re-retrieved and re-graded when grading is
+   enabled; pipeline drift folds into consistency".
 4. Caveat block always printed: n is small (CIs are wide), one annotator,
    consistency ≠ correctness.
 

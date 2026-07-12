@@ -45,6 +45,7 @@ def test_label_writes_selfcontained_rows(monkeypatch, tmp_path, capsys):
                                 "citation_accuracy": 2}
     assert rows[0]["human"] == {"faithfulness": 3, "relevance": 5,
                                 "citation_accuracy": 2}
+    assert rows[0]["synthetic"] is False
     assert "labeled_at" in rows[0]
 
 
@@ -208,6 +209,7 @@ def test_kappa_ci_deterministic_and_brackets_point_estimate(tmp_path):
 
 def test_consistency_rejudges_and_reports_kappa(monkeypatch, tmp_path, capsys):
     import eval.calibrate as cal
+    from config import settings
     from eval.judge import JudgeScores
     from rag.store import ScoredChunk
 
@@ -218,6 +220,7 @@ def test_consistency_rejudges_and_reports_kappa(monkeypatch, tmp_path, capsys):
     ]
     path = _labels_file(tmp_path, labels)
     monkeypatch.setattr(cal, "_load_dataset", lambda p: [])
+    monkeypatch.setattr(settings, "grading_enabled", False)
     chunk = ScoredChunk(paper_id="1706.03762", title="T", text="ctx", score=0.9)
     monkeypatch.setattr(cal, "retrieve", lambda q: [chunk])
     calls = []
@@ -237,3 +240,36 @@ def test_consistency_rejudges_and_reports_kappa(monkeypatch, tmp_path, capsys):
     assert out["consistency"]["relevance"] == 1.0
     printed = capsys.readouterr().out
     assert "re-retrieved" in printed  # retrieval-drift disclosure
+
+
+def test_consistency_grades_contexts_when_grading_enabled(monkeypatch, tmp_path):
+    import eval.calibrate as cal
+    from config import settings
+    from eval.judge import JudgeScores
+    from rag.store import ScoredChunk
+
+    labels = [
+        _label_row("q1", 4, 5, 2, 4, 5, 2),
+        _label_row("q2", 3, 4, 2, 3, 4, 2),
+    ]
+    path = _labels_file(tmp_path, labels)
+    monkeypatch.setattr(cal, "_load_dataset", lambda p: [])
+    monkeypatch.setattr(settings, "grading_enabled", True)
+    kept = ScoredChunk(paper_id="p1", title="T", text="ctx", score=0.9)
+    dropped = ScoredChunk(paper_id="p2", title="T2", text="ctx2", score=0.5)
+    monkeypatch.setattr(cal, "retrieve", lambda q: [kept, dropped])
+    graded_calls = []
+    monkeypatch.setattr(cal, "grade_chunks",
+                        lambda q, chunks: graded_calls.append(q) or [kept])
+    seen_contexts = []
+
+    def fake_judge(question, answer, expected_gist, contexts):
+        seen_contexts.append(contexts)
+        return JudgeScores(faithfulness=4, relevance=5, citation_accuracy=2,
+                           reasoning="r")
+
+    monkeypatch.setattr(cal, "judge_answer", fake_judge)
+    cal.run_report(path, consistency=True)
+    assert graded_calls == ["q1", "q2"]
+    # judge saw only the graded survivor, mirroring run_eval's pipeline
+    assert all(c == [{"paper_id": "p1", "text": "ctx"}] for c in seen_contexts)

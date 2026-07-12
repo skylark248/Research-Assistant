@@ -19,9 +19,11 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
+from config import settings
 from eval.judge import JudgeScores, judge_answer
 from eval.run import _load_dataset
 from eval.stats import weighted_kappa
+from rag.grade import grade_chunks
 from rag.retrieve import retrieve
 
 LABELS_PATH = "eval/human-labels.json"
@@ -29,7 +31,10 @@ DIMENSIONS = ["faithfulness", "relevance", "citation_accuracy"]
 
 CAVEAT = """
 Caveats: n is small (CIs are wide); one annotator (no inter-annotator
-baseline); consistency measures stability, not correctness."""
+baseline); consistency measures stability, not correctness; with a mostly-
+synthetic sample, kappa reflects agreement on generator-shared questions and
+range compression can deflate it — read it jointly with MAE and the
+histograms."""
 
 
 class _SkipItem(Exception):
@@ -94,6 +99,7 @@ def run_label(report_path: str, labels_path: str, n: int, seed: int) -> dict:
                 "answer": row["answer"],
                 "judge": {d: row[d] for d in DIMENSIONS},
                 "human": human,
+                "synthetic": bool(row.get("synthetic", False)),
                 "labeled_at": datetime.now().isoformat(timespec="seconds"),
             })
             Path(labels_path).write_text(json.dumps(labels, indent=2))
@@ -147,10 +153,17 @@ def _run_consistency(labels: list[dict]) -> dict:
     for label in labels:
         try:
             chunks = retrieve(label["question"])
+            if settings.grading_enabled:
+                chunks = grade_chunks(label["question"], chunks)
             contexts = [{"paper_id": c.paper_id, "text": c.text}
                         for c in chunks]
+            gist = gists.get(label["question"])
+            if gist is None:
+                print(f"  no gist on file for {label['question'][:60]!r} — "
+                      "re-judging with an empty reference")
+                gist = ""
             scores = judge_answer(label["question"], label["answer"],
-                                  gists.get(label["question"], ""), contexts)
+                                  gist, contexts)
         except Exception as exc:
             failures += 1
             print(f"  re-judge failed for {label['question'][:60]!r}: {exc}")
@@ -158,8 +171,9 @@ def _run_consistency(labels: list[dict]) -> dict:
         for d in DIMENSIONS:
             first[d].append(label["judge"][d])
             rerun[d].append(getattr(scores, d))
-    print(f"  (contexts re-retrieved — retrieval drift folds into "
-          f"consistency; {failures} failed re-judgements skipped)")
+    print(f"  (contexts re-retrieved and re-graded when grading is enabled — "
+          f"pipeline drift folds into consistency; {failures} failed "
+          f"re-judgements skipped)")
     out: dict = {"failures": failures}
     for d in DIMENSIONS:
         if len(first[d]) < 2:
