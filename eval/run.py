@@ -48,6 +48,27 @@ def _faithfulness_rate(rows: list[dict]) -> float | None:
     return sum(1 for v in verdicts if v) / len(verdicts)
 
 
+def _subset_summary(rows: list[dict]) -> dict:
+    """Per-provenance averages (hand-written vs synthetic); empty subsets omitted.
+    No per-subset CIs — the hand subset is tiny and they would read as noise."""
+    subsets: dict[str, dict] = {}
+    for name, is_synthetic in (("hand", False), ("synthetic", True)):
+        subset_rows = [r for r in rows
+                       if r.get("synthetic", False) is is_synthetic]
+        if not subset_rows:
+            continue
+        subsets[name] = {
+            "n": len(subset_rows),
+            "avg_precision": mean(r["precision"] for r in subset_rows),
+            "avg_recall": mean(r["recall"] for r in subset_rows),
+            "avg_faithfulness": mean(r["faithfulness"] for r in subset_rows),
+            "avg_relevance": mean(r["relevance"] for r in subset_rows),
+            "avg_citation_accuracy": mean(r["citation_accuracy"]
+                                          for r in subset_rows),
+        }
+    return subsets
+
+
 def run_eval(dataset_path: str | None = None,
              report_path: str = "report.json") -> dict:
     store = VectorStore()
@@ -74,6 +95,7 @@ def run_eval(dataset_path: str | None = None,
             "recall": recall,
             **scores.model_dump(),
             "faithful": answer.faithful,
+            "synthetic": item.get("synthetic", False),
             "answer": answer.text,
         })
 
@@ -85,6 +107,7 @@ def run_eval(dataset_path: str | None = None,
         "avg_relevance": mean(r["relevance"] for r in rows),
         "avg_citation_accuracy": mean(r["citation_accuracy"] for r in rows),
         "faithfulness_rate": _faithfulness_rate(rows),
+        "subsets": _subset_summary(rows),
     }
     for metric in ["precision", "recall", "faithfulness", "relevance",
                    "citation_accuracy"]:
@@ -190,6 +213,10 @@ def main() -> None:
             ci = s["faithfulness_rate_ci"]
             line += f" [{ci[0]:.0%}, {ci[1]:.0%}]"
         print(line)
+    for name, sub in s.get("subsets", {}).items():
+        print(f"  [{name}] n={sub['n']}  precision {sub['avg_precision']:.2f}  "
+              f"recall {sub['avg_recall']:.2f}  faithfulness {sub['avg_faithfulness']:.2f}  "
+              f"relevance {sub['avg_relevance']:.2f}  citations {sub['avg_citation_accuracy']:.2f}")
 
 
 if __name__ == "__main__":
