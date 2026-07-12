@@ -36,7 +36,9 @@ local model. Fits an 8GB M1 MacBook Air.
 ```bash
 brew install ollama
 ollama pull qwen2.5:3b                      # ~1.9GB
-OLLAMA_CONTEXT_LENGTH=8192 ollama serve     # grounded prompts need >4k context
+OLLAMA_CONTEXT_LENGTH=8192 OLLAMA_NUM_PARALLEL=1 ollama serve
+# >4k context for grounded prompts; a single parallel slot keeps the KV cache
+# from multiplying — without it, long eval runs can OOM an 8GB machine
 ```
 
 Set in `.env`: `LLM_PROVIDER=local` and `EMBEDDING_PROVIDER=local`.
@@ -61,7 +63,7 @@ uv run python -c "from rag.ingest import ingest_query; print(ingest_query('atten
 # Offline eval -> report.json + printed summary
 uv run python -m eval.run
 
-# Retrieval ablation: golden dataset across dense/sparse/hybrid/rerank/rewrite presets
+# Retrieval ablation: dataset across dense/sparse/hybrid/rerank/grade/rewrite presets
 uv run python -m eval.run --ablation
 
 # Generate synthetic eval items from ingested chunks (grows the golden set;
@@ -123,10 +125,11 @@ uv run pytest -m local         # real local model; needs Ollama running, no keys
 - `llm/` — provider abstraction (Anthropic + OpenAI + local/Ollama), streaming, prompts,
   structured output, prompt caching
 - `rag/` — arXiv fetch, PDF parse, chunk, embed (dense + BM25 sparse), Qdrant store (hybrid RRF),
-  rerank, query rewrite, retrieve, answer, migrate
+  rerank, query rewrite, retrieve, relevance grading, answer, faithfulness check, migrate
 - `agents/` — LangGraph agent with SQLite-checkpointed memory; multi-agent supervisor (`agents/multi.py`);
   custom MCP server (`python -m agents.mcp_server`); MCP client (also consumes `mcp-server-fetch`)
-- `eval/` — golden dataset, LLM judge, retrieval metrics, report generator, ablation mode
+- `eval/` — golden + synthetic datasets, synthetic-item generator, LLM judge, retrieval metrics,
+  bootstrap CIs, report generator, ablation mode
 - `api/` — FastAPI routes (chat, SSE stream, ingest, providers, threads) + static frontend
 
 Imports flow one way: `api → agents → rag/llm`; `eval → rag/agents/llm`.
