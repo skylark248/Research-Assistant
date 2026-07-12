@@ -372,3 +372,19 @@ def test_subsets_omit_empty_subset(monkeypatch, tmp_path):
 
     report = run_mod.run_eval(report_path=str(tmp_path / "r.json"))
     assert list(report["summary"]["subsets"]) == ["hand"]
+
+
+def test_truthy_nonbool_synthetic_value_still_partitions(monkeypatch, tmp_path):
+    run_mod = _fake_eval_env(monkeypatch, tmp_path)
+
+    golden = tmp_path / "golden.json"
+    golden.write_text(json.dumps([_item("g1"),
+                                  {**_item("s1"), "synthetic": 1}]))  # int, not bool
+    monkeypatch.setattr(run_mod, "DEFAULT_DATASET", str(golden))
+    monkeypatch.setattr(run_mod, "SYNTHETIC_DATASET", str(tmp_path / "nope.json"))
+
+    report = run_mod.run_eval(report_path=str(tmp_path / "r.json"))
+    subsets = report["summary"]["subsets"]
+    # every row lands in exactly one subset — nothing vanishes
+    assert subsets["hand"]["n"] + subsets["synthetic"]["n"] == report["summary"]["n"] == 2
+    assert report["rows"][1]["synthetic"] is True  # normalized to real bool

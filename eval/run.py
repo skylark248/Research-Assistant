@@ -54,7 +54,7 @@ def _subset_summary(rows: list[dict]) -> dict:
     subsets: dict[str, dict] = {}
     for name, is_synthetic in (("hand", False), ("synthetic", True)):
         subset_rows = [r for r in rows
-                       if r.get("synthetic", False) is is_synthetic]
+                       if bool(r.get("synthetic", False)) is is_synthetic]
         if not subset_rows:
             continue
         subsets[name] = {
@@ -95,7 +95,7 @@ def run_eval(dataset_path: str | None = None,
             "recall": recall,
             **scores.model_dump(),
             "faithful": answer.faithful,
-            "synthetic": item.get("synthetic", False),
+            "synthetic": bool(item.get("synthetic", False)),
             "answer": answer.text,
         })
 
