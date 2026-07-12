@@ -16,10 +16,28 @@ from statistics import mean
 from config import settings
 from eval.judge import judge_answer
 from eval.metrics import precision_recall
+from eval.stats import bootstrap_ci
 from rag.answer import answer_question
 from rag.grade import grade_chunks
 from rag.retrieve import retrieve
 from rag.store import VectorStore
+
+
+DEFAULT_DATASET = "eval/golden.json"
+SYNTHETIC_DATASET = "eval/golden-synthetic.json"
+
+
+def _load_dataset(dataset_path: str | None) -> list[dict]:
+    """Explicit path → exactly that file. Default (None) → the hand-written
+    golden set plus the synthetic set when it exists (the phase-6 generator
+    pipeline is fully automatic — no human gate between generate and use)."""
+    if dataset_path is not None:
+        return json.loads(Path(dataset_path).read_text())
+    items = json.loads(Path(DEFAULT_DATASET).read_text())
+    synthetic = Path(SYNTHETIC_DATASET)
+    if synthetic.exists():
+        items = items + json.loads(synthetic.read_text())
+    return items
 
 
 def _faithfulness_rate(rows: list[dict]) -> float | None:
@@ -30,12 +48,12 @@ def _faithfulness_rate(rows: list[dict]) -> float | None:
     return sum(1 for v in verdicts if v) / len(verdicts)
 
 
-def run_eval(dataset_path: str = "eval/golden.json",
+def run_eval(dataset_path: str | None = None,
              report_path: str = "report.json") -> dict:
     store = VectorStore()
     store.ping()  # fail fast with a clear message when Qdrant is down
     store.check_schema()
-    dataset = json.loads(Path(dataset_path).read_text())
+    dataset = _load_dataset(dataset_path)
     rows: list[dict] = []
     for item in dataset:
         question = item["question"]
@@ -68,6 +86,13 @@ def run_eval(dataset_path: str = "eval/golden.json",
         "avg_citation_accuracy": mean(r["citation_accuracy"] for r in rows),
         "faithfulness_rate": _faithfulness_rate(rows),
     }
+    for metric in ["precision", "recall", "faithfulness", "relevance",
+                   "citation_accuracy"]:
+        summary[f"{metric}_ci"] = list(bootstrap_ci([r[metric] for r in rows]))
+    verdict_values = [1.0 if r["faithful"] else 0.0
+                      for r in rows if r.get("faithful") is not None]
+    summary["faithfulness_rate_ci"] = (
+        list(bootstrap_ci(verdict_values)) if verdict_values else None)
     report = {"summary": summary, "rows": rows}
     Path(report_path).write_text(json.dumps(report, indent=2))
     return report
@@ -97,7 +122,7 @@ PRESETS: dict[str, dict] = {
 }
 
 
-def run_ablation(dataset_path: str = "eval/golden.json",
+def run_ablation(dataset_path: str | None = None,
                  report_path: str = "report-ablation.json") -> dict:
     """Run the golden dataset once per preset; collect summaries side by side.
 
@@ -126,29 +151,45 @@ def run_ablation(dataset_path: str = "eval/golden.json",
 def _print_ablation(report: dict) -> None:
     cols = ["avg_precision", "avg_recall", "avg_faithfulness",
             "avg_relevance", "avg_citation_accuracy"]
-    print(f"\n{'preset':<16}" + "".join(f"{c.removeprefix('avg_'):>19}" for c in cols))
+    print(f"\n{'preset':<22}" + "".join(f"{c.removeprefix('avg_'):>22}" for c in cols))
     for name, s in report["presets"].items():
-        print(f"{name:<16}" + "".join(f"{s[c]:>19.2f}" for c in cols))
+        cells = []
+        for c in cols:
+            ci = s.get(c.removeprefix("avg_") + "_ci")
+            half_width = (ci[1] - ci[0]) / 2 if ci else 0.0
+            cells.append(f"{s[c]:.2f} ±{half_width:.2f}")
+        print(f"{name:<22}" + "".join(f"{cell:>22}" for cell in cells))
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Offline eval harness")
     parser.add_argument("--ablation", action="store_true",
                         help="sweep retrieval presets and print a comparison table")
+    parser.add_argument("--dataset", default=None,
+                        help="use exactly this dataset file (default: golden.json "
+                             "+ golden-synthetic.json when present)")
     args = parser.parse_args()
     if args.ablation:
-        _print_ablation(run_ablation())
+        _print_ablation(run_ablation(dataset_path=args.dataset))
         return
-    report = run_eval()
+    report = run_eval(dataset_path=args.dataset)
     s = report["summary"]
+
+    def fmt(value: float, ci: list[float]) -> str:
+        return f"{value:.2f} [{ci[0]:.2f}, {ci[1]:.2f}]"
+
     print(f"\nEvaluated {s['n']} questions -> report.json")
-    print(f"  retrieval precision : {s['avg_precision']:.2f}")
-    print(f"  retrieval recall    : {s['avg_recall']:.2f}")
-    print(f"  faithfulness        : {s['avg_faithfulness']:.2f} / 5")
-    print(f"  relevance           : {s['avg_relevance']:.2f} / 5")
-    print(f"  citation accuracy   : {s['avg_citation_accuracy']:.2f} / 5")
+    print(f"  retrieval precision : {fmt(s['avg_precision'], s['precision_ci'])}")
+    print(f"  retrieval recall    : {fmt(s['avg_recall'], s['recall_ci'])}")
+    print(f"  faithfulness        : {fmt(s['avg_faithfulness'], s['faithfulness_ci'])} / 5")
+    print(f"  relevance           : {fmt(s['avg_relevance'], s['relevance_ci'])} / 5")
+    print(f"  citation accuracy   : {fmt(s['avg_citation_accuracy'], s['citation_accuracy_ci'])} / 5")
     if s["faithfulness_rate"] is not None:
-        print(f"  verified answers    : {s['faithfulness_rate']:.0%}")
+        line = f"  verified answers    : {s['faithfulness_rate']:.0%}"
+        if s.get("faithfulness_rate_ci"):
+            ci = s["faithfulness_rate_ci"]
+            line += f" [{ci[0]:.0%}, {ci[1]:.0%}]"
+        print(line)
 
 
 if __name__ == "__main__":
