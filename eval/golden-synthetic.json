@@ -1,0 +1,402 @@
+[
+  {
+    "question": "What is the effect of applying dropout to both encoder and decoder stacks in Transformer (base model)?",
+    "expected_paper_ids": [
+      "1706.03762"
+    ],
+    "expected_answer_gist": "Dropout is applied to the output of each sub-layer before normalization, as well as to the sums of embeddings and positional encodings, with a drop-out rate of Pdrop = 0.1.",
+    "synthetic": true
+  },
+  {
+    "question": "How does the retrieval-augmented generation (RAG) model use non-parametric and parametric memories to generate book titles?",
+    "expected_paper_ids": [
+      "2005.11401"
+    ],
+    "expected_answer_gist": "The RAG model combines non-parametric knowledge from specific documents with parametric memory to complete novel titles like 'The Sun Also Rises'. It uses document 2's information for the title 'The Sun Also Rises' and shows how it doesn't rely solely on these documents.",
+    "synthetic": true
+  },
+  {
+    "question": "What type of activation function does the author use in their Mlp implementation, as exemplified by the Transformer block described in Figure 2?",
+    "expected_paper_ids": [
+      "2105.02723"
+    ],
+    "expected_answer_gist": "The authors use the GELU (Gaussian Error Linear Unit) activation function in the Mlp for the feed-forward layers in the Transformer block, as shown in the code and referenced papers.",
+    "synthetic": true
+  },
+  {
+    "question": "How does the scale-up of BEiT from base to large compare to supervised pre-training in terms of performance improvement on ImageNet compared to ViT models trained under similar conditions?",
+    "expected_paper_ids": [
+      "2106.08254"
+    ],
+    "expected_answer_gist": "BEiT shows greater improvements than ViT when scaled up and compared to both supervised and self-supervised learning with ImageNet-22K.",
+    "synthetic": true
+  },
+  {
+    "question": "What is the impact of increasing \u03bb in DAiD's retrieval parameters on its generative flexibility?",
+    "expected_paper_ids": [
+      "2506.06962"
+    ],
+    "expected_answer_gist": "Optimizing \u03c4 and merging weight \u03bb in DAiD affects performance; increasing \u03bb generally leads to a decrease in generative flexibility, indicating that too much integration of retrieval information can diminish generation quality.",
+    "synthetic": true
+  },
+  {
+    "question": "What mechanism does Multi-Head Attention use to address the limitations of regular Attention?",
+    "expected_paper_ids": [
+      "1706.03762"
+    ],
+    "expected_answer_gist": "Multi-Head Attention addresses the limitation of regular Attention by combining multiple parallel attention layers.",
+    "synthetic": true
+  },
+  {
+    "question": "Why does the feed-forward-only model have one notable advantage over ViT in terms of complexity compared to ViT's design? What is this specific feature of the feed-forward layer?",
+    "expected_paper_ids": [
+      "2105.02723"
+    ],
+    "expected_answer_gist": "The feed-forward-only model has an advantage because its complexity grows linearly with respect to the sequence length, unlike the quadratic growth exhibited by ViT due to the intermediate projection dimension applied over patches. This intermediate dimension can be chosen as a multiple of input features without making ViT quadratically complex.",
+    "synthetic": true
+  },
+  {
+    "question": "What specific task does BEIT propose for self-supervised image representation learning, and what are its two main components according to the paper?",
+    "expected_paper_ids": [
+      "2106.08254"
+    ],
+    "expected_answer_gist": "BEIT proposes a masked image modeling task where each image has two views: image patches and visual tokens. It tokenizes the original image into visual tokens and masks random portions of these patches for pre-training.",
+    "synthetic": true
+  },
+  {
+    "question": "How does DAiD on Show-o adapt its neighborhood encoding strategy from autoregressive to non-autoregressive models?",
+    "expected_paper_ids": [
+      "2506.06962"
+    ],
+    "expected_answer_gist": "DAiD on Show-o utilizes all eight surrounding patches to form a comprehensive 8-length neighborhood representation for each target token position instead of the upper-left neighboring patches used in autoregressive models.",
+    "synthetic": true
+  },
+  {
+    "question": "What mechanism does the Transformer use for processing input sequences, and how is it different from traditional sequence transduction models?",
+    "expected_paper_ids": [
+      "1706.03762"
+    ],
+    "expected_answer_gist": "The Transformer uses self-attention mechanisms instead of recurrent neural networks or convolutional layers. This differs from traditional models which often rely on RNNs or convolutions for sequence modeling.",
+    "synthetic": true
+  },
+  {
+    "question": "What method do they use for replacing masked tokens in BERT\u2019s Masked LM during pre-training?",
+    "expected_paper_ids": [
+      "1810.04805"
+    ],
+    "expected_answer_gist": "BERT uses a masking procedure where 80% of the time, the word is replaced by the [MASK] token. The rest of the time, it's either randomly chosen from a vocabulary or kept unchanged.",
+    "synthetic": true
+  },
+  {
+    "question": "How does SuperGLUE address the limitations of existing benchmarks like GLUE and R3 in evaluating language understanding systems?",
+    "expected_paper_ids": [
+      "2005.11401"
+    ],
+    "expected_answer_gist": "SuperGLUE introduces multi-tasking and a more challenging set of tasks to assess general-purpose NLP systems' performance compared to prior benchmarks.",
+    "synthetic": true
+  },
+  {
+    "question": "What initialization strategy does BEiT use for its parameters and how is it applied specifically for thel-th Transformer layer?",
+    "expected_paper_ids": [
+      "2106.08254"
+    ],
+    "expected_answer_gist": "BEiT initializes all parameters randomly within a small range [\u22120.02, 0.02]. Then, for thel-th Transformer layer, it rescales the output matrices of self-attention modules and feed-forward networks by 1\u221a\n2l to stabilize them during training. This stabilization is crucial for large-scale pre-training, especially with BEIT's architecture.",
+    "synthetic": true
+  },
+  {
+    "question": "What mechanism does additive attention use to counteract potential issues arising from large dot products mentioned in Equation 4 when dk is large?",
+    "expected_paper_ids": [
+      "1706.03762"
+    ],
+    "expected_answer_gist": "Additive attention scales the dot products by \\(\frac{1}{\root{dk}}\\) to mitigate the problem of small gradients caused by large magnitudes of dot products as dk grows.",
+    "synthetic": true
+  },
+  {
+    "question": "What is the training loss for BERT BASE according to the paper?",
+    "expected_paper_ids": [
+      "1810.04805"
+    ],
+    "expected_answer_gist": "The training loss consists of the mean masked Language Model (LM) likelihood and the mean next sentence prediction likelihood, as stated in the paper.",
+    "synthetic": true
+  },
+  {
+    "question": "How did the authors demonstrate the advantage of RAG over other models in updating knowledge at test time?",
+    "expected_paper_ids": [
+      "2005.11401"
+    ],
+    "expected_answer_gist": "The authors compared outputs from RAG using an older index (December 2016) to those using a newer one index (December 2018), demonstrating that RAG can easily update its knowledge without additional training, which is not the case for parametric models like BART.",
+    "synthetic": true
+  },
+  {
+    "question": "What method does BEiT use to overcome the issue of focusing on short-range dependencies and high-frequency details in vision pre-training?",
+    "expected_paper_ids": [
+      "2106.08254"
+    ],
+    "expected_answer_gist": "BEiT uses predicting discrete visual tokens to summarize detailed information into higher-level abstractions.",
+    "synthetic": true
+  },
+  {
+    "question": "How does dynamic local patch-level retrieval contribute to the improvement in multi-object generation accuracy demonstrated by Alex's methods on DPG-Bench compared to static full-image retrieval methods?",
+    "expected_paper_ids": [
+      "2506.06962"
+    ],
+    "expected_answer_gist": "Dynamic local patch-level retrieval enhances multi-object generation accuracy by allowing for more precise and relevant reference inclusion during text-to-image generation on dense prompts like those found in DPG-Bench.",
+    "synthetic": true
+  },
+  {
+    "question": "How many convolutional layers would be needed if input and output positions were fully connected for sequences of length n, considering contiguous kernels?",
+    "expected_paper_ids": [
+      "1706.03762"
+    ],
+    "expected_answer_gist": "For fully connected connections in contiguous kernels, O(n/k) convolutional layers are required to connect all pairs of input and output positions.",
+    "synthetic": true
+  },
+  {
+    "question": "What activation features were employed in the feature-based approach to achieve improvements on the NER task?",
+    "expected_paper_ids": [
+      "1810.04805"
+    ],
+    "expected_answer_gist": "The feature-based approach used activations extracted from one or more layers of BERT without fine-tuning any parameters, which served as input to a randomly initialized BiLSTM before the classification layer. These contextual embeddings improved performance compared to only using top four hidden layers for token representations.",
+    "synthetic": true
+  },
+  {
+    "question": "How did replacing the vision transformer's attention layer with a feed-forward layer affect its performance on ImageNet compared to ViT and DeiT?",
+    "expected_paper_ids": [
+      "2105.02723"
+    ],
+    "expected_answer_gist": "Replacing the attention layer with a feed-forward layer improved ImageNet classification accuracy for the proposed architecture (74.9%) above both ViT (77.9%) and DeiT (79.9%).",
+    "synthetic": true
+  },
+  {
+    "question": "How does blockwise masking benefit BEIT on semantic segmentation compared to random masking?",
+    "expected_paper_ids": [
+      "2106.08254"
+    ],
+    "expected_answer_gist": "Blockwise masking is superior to random masking on semantic segmentation for BEIT, as evidenced by the ablation study results.",
+    "synthetic": true
+  },
+  {
+    "question": "How does each convolution operation transform local patch features in AR-RAG algorithm?",
+    "expected_paper_ids": [
+      "2506.06962"
+    ],
+    "expected_answer_gist": "The first convolution operation transforms local patch features into an intermediate representation, while the second convolution operation processes these intermediate features to produce scale-specific refined representations.",
+    "synthetic": true
+  },
+  {
+    "question": "What are the three main research goals mentioned in the paper for improving models?",
+    "expected_paper_ids": [
+      "1706.03762"
+    ],
+    "expected_answer_gist": "The paper outlines three main research goals: extending the Transformer to non-text modalities like images and audio; exploring local, restricted attention mechanisms; and making generation less sequential.",
+    "synthetic": true
+  },
+  {
+    "question": "What are some common objectives used in pre-training models according to the paper excerpt provided?",
+    "expected_paper_ids": [
+      "1810.04805"
+    ],
+    "expected_answer_gist": "BERT pre-training includes both masked language model (MLM) and next sentence prediction (NSP). Other mentioned objectives include information retrieval (SQuAD), natural language inference (NLI).",
+    "synthetic": true
+  },
+  {
+    "question": "What is the role of the generator component in Retrieval-Augmented Generation (RAG)?",
+    "expected_paper_ids": [
+      "2005.11401"
+    ],
+    "expected_answer_gist": "The generator component, using a pre-trained BART-large model with 400M parameters, models the probability distribution for the next output token given the context x and previously generated tokens along with retrieved document content z.",
+    "synthetic": true
+  },
+  {
+    "question": "How does the addition of a feed-forward layer over the feature dimension compare to a traditional convolutional operation according to the paper?",
+    "expected_paper_ids": [
+      "2105.02723"
+    ],
+    "expected_answer_gist": "The addition of a feed-forward layer over the feature dimension can be viewed as an unusual type of 1x1 convolution with a full receptive field and a single channel. The authors argue that the entire network resembles a transformation network more than a traditional convolutional network.",
+    "synthetic": true
+  },
+  {
+    "question": "How does BEIT-L pre-tuning on ImageNet-22K compare to ViT-L trained with Google\u2019s in-house data for image classification tasks on ImageNet dataset?",
+    "expected_paper_ids": [
+      "2106.08254"
+    ],
+    "expected_answer_gist": "BEIT-L pre-training achieves comparable performance to ViT-L, which was trained using much larger labeled data (Google JFT-3B) compared to the 14M labeled ImageNet-22K that BEIT-L uses. Both models achieve a top-1 accuracy of around 89%. However, BEIT-L required only ImageNet-22K labeled data.",
+    "synthetic": true
+  },
+  {
+    "question": "How does increasing the number of layers in BERT models affect their performance according to the results presented in Section 5.2?",
+    "expected_paper_ids": [
+      "1810.04805"
+    ],
+    "expected_answer_gist": "Table 6 shows that larger BERT models achieved higher Dev Set accuracy on GLUE tasks compared to smaller ones.",
+    "synthetic": true
+  },
+  {
+    "question": "Which method described in [31] by Kenton Lee et al. is specifically about latent retrieval for weakly supervised open domain question answering?",
+    "expected_paper_ids": [
+      "2005.11401"
+    ],
+    "expected_answer_gist": "[31] describes a method using latent retrieval for weakly supervised open domain questions, as stated in the abstract and pages 6086-6096 of the paper. The core concept is the use of latent retrieval in open domain question answering tasks.",
+    "synthetic": true
+  },
+  {
+    "question": "How does removing an attention layer affect the performance of the ViT model compared to using only a feed-forward layer?",
+    "expected_paper_ids": [
+      "2105.02723"
+    ],
+    "expected_answer_gist": "The excerpt discusses testing the hypothesis that attention layers are crucial for successful image classification with the Vision Transformer (ViT). However, by replacing the attention mechanism with a simple feed-forward network, the researchers aimed to determine if attention is necessary for high performance on the ImageNet benchmark.",
+    "synthetic": true
+  },
+  {
+    "question": "What differences did intermediate fine-tuning of BEIT exhibit compared to standard self-supervised pretraining methodologies?",
+    "expected_paper_ids": [
+      "2106.08254"
+    ],
+    "expected_answer_gist": "Intermediate fine-tuning improved results on ImageNet by 1+ points at 384\u00d7384 resolution. It involved first pretraining in a self-supervised manner and then tuning the model with additional labeled data.",
+    "synthetic": true
+  },
+  {
+    "question": "How does AR-RAG utilize the representation of a single image token's h-hop surrounding patches for retrieval purposes?",
+    "expected_paper_ids": [
+      "2506.06962"
+    ],
+    "expected_answer_gist": "AR-RAG concatenates the vectors of 8 adjacent patches surrounding an image token at position (i, j) into a representation. If no surrounding patches are available (e.g., at edges), it uses a zero vector to represent them.",
+    "synthetic": true
+  },
+  {
+    "question": "What specific learning rate adjustment method was used in the training schedule, and what does this imply about the initial phase of training?",
+    "expected_paper_ids": [
+      "1706.03762"
+    ],
+    "expected_answer_gist": "The Adam optimizer with specified \u03b21, \u03b22, and \u03f5 values was used. Learning rates increased linearly for the first 4000 steps (warmup_steps), after which they decreased proportionally to step number's inverse square root.",
+    "synthetic": true
+  },
+  {
+    "question": "Which of the following works presents a method for generating a human-generated machine reading comprehension dataset? (Nguyen et al., [43], Nogueira and Cho, [44], Ott et al., [45] or Perez et al., [46])",
+    "expected_paper_ids": [
+      "2005.11401"
+    ],
+    "expected_answer_gist": "The Nguyen et al. work discusses the creation of MS MARCO, a human-generated machine reading comprehension dataset.",
+    "synthetic": true
+  },
+  {
+    "question": "How does the addition of LayerScale and relative position bias affect the model's performance on ImageNet classification compared to the base ViT model?",
+    "expected_paper_ids": [
+      "2106.08254"
+    ],
+    "expected_answer_gist": "The addition of both LayerScale and relative position bias improves ImageNet classification accuracy from 82.86 to 83.22 using a base-size model pretrained for 300 epochs.",
+    "synthetic": true
+  },
+  {
+    "question": "Which two researchers designed and implemented the first Transformer models?",
+    "expected_paper_ids": [
+      "1706.03762"
+    ],
+    "expected_answer_gist": "Ashish and Illia designed and implemented the first Transformer models. Noam also contributed significantly, but he is not specifically mentioned as being involved in this work with them.",
+    "synthetic": true
+  },
+  {
+    "question": "Which two methodological approaches to pretraining word embeddings are noted in the given excerpt and what does ELMo integrate with existing models?",
+    "expected_paper_ids": [
+      "1810.04805"
+    ],
+    "expected_answer_gist": "The excerpt mentions unsupervised feature-based approaches and objectives from left-to-right language modeling or discriminating correct words. ELMo integrates contextualized word embeddings with existing task-specific architectures.",
+    "synthetic": true
+  },
+  {
+    "question": "What are some limitations of using AR-RAG for 2D image generation as described in the paper, particularly concerning the inclusion bias introduced by a smaller database?",
+    "expected_paper_ids": [
+      "2506.06962"
+    ],
+    "expected_answer_gist": "The AR-RAG framework demonstrated limitations including restricted diversity due to its reliance on a smaller database compared to billion-scale databases, which may introduce visual pattern biases and restrict representation of underrepresented elements.",
+    "synthetic": true
+  },
+  {
+    "question": "In the SQuAD v1.1 task, what embedding is used for the input passage in BERT's representation system?",
+    "expected_paper_ids": [
+      "1810.04805"
+    ],
+    "expected_answer_gist": "[BERT] uses the **B embedding** to represent the passage in the **SQuAD v1.1** dataset.",
+    "synthetic": true
+  },
+  {
+    "question": "Which table section describes an experiment varying the number of attention heads while keeping computation amount constant, as described in Section 3.2.2?",
+    "expected_paper_ids": [
+      "1706.03762"
+    ],
+    "expected_answer_gist": "<Table> (A) provides such an experiment.",
+    "synthetic": true
+  },
+  {
+    "question": "In what way were annotations used for open-domain QA tasks according to the paper?",
+    "expected_paper_ids": [
+      "2005.11401"
+    ],
+    "expected_answer_gist": "For open-domain QA tasks like Natural Questions and WebQuestions, multiple answer annotations are used during training by training the model with each (q,a) pair separately. This approach results in a small increase in accuracy compared to using a single annotation per query.",
+    "synthetic": true
+  },
+  {
+    "question": "How does BEIT's performance compare to that of DINO when combined in multi-task pre-training for image classification and semantic segmentation tasks, specifically focusing on the results reported in Table 10? Answer as a quantitative comparison including throughput improvements.",
+    "expected_paper_ids": [
+      "2106.08254"
+    ],
+    "expected_answer_gist": "BEIT with DINO (300 Epochs) achieved an accuracy of 82.9% for ImageNet classification and 46.85 mIoU score for ADE20K semantic segmentation, indicating a throughput improvement by a factor of 1.0 compared to BEAT alone.",
+    "synthetic": true
+  },
+  {
+    "question": "What was the increase in maximum output length for both WSJ only and semi-supervised settings, compared to previous methods?",
+    "expected_paper_ids": [
+      "1706.03762"
+    ],
+    "expected_answer_gist": "The Transformer increased the maximum output length by 300 characters relative to previous models.",
+    "synthetic": true
+  },
+  {
+    "question": "How does the proposed method by the authors differ from iGPT in terms of input data for training?",
+    "expected_paper_ids": [
+      "2106.08254"
+    ],
+    "expected_answer_gist": "The proposed method uses image patches as input without losing pixel-level information, whereas iGPT encodes images using k-means clustering and clustered tokens. The latter approach lacks the clarity of visual tokens obtained through discrete VAE.",
+    "synthetic": true
+  },
+  {
+    "question": "What computational procedure does Algorithm 1 ensure for the refinement of retrieved patch representations in context?",
+    "expected_paper_ids": [
+      "2506.06962"
+    ],
+    "expected_answer_gist": "Algorithm 1 describes a multi-scale feature smoothing algorithm that processes each retrieved patch representation independently using convolution operations at multiple scales (2\u00d72 to Q\u00d7Q kernels).",
+    "synthetic": true
+  },
+  {
+    "question": "What is the alternative network architecture proposed by the authors in relation to traditional sequence transduction models?",
+    "expected_paper_ids": [
+      "1706.03762"
+    ],
+    "expected_answer_gist": "[The Transformer] is a new network architecture based solely on attention mechanisms, which substitutes for recurrence and convolution in traditional models.",
+    "synthetic": true
+  },
+  {
+    "question": "How does BERT's use of a bidirectional Transformer encoder improve its language understanding capability compared to standard language model training?",
+    "expected_paper_ids": [
+      "1810.04805"
+    ],
+    "expected_answer_gist": "BERT's bidirectional Transformer encoder maintains contextual representations of all input tokens without knowing their role (predicting or masked), unlike standard models.",
+    "synthetic": true
+  },
+  {
+    "question": "How does RAG-Sequence model generate text compared to RAG-Token model?",
+    "expected_paper_ids": [
+      "2005.11401"
+    ],
+    "expected_answer_gist": "[RAG-Sequence] uses one retrieved document to predict all target tokens whereas [RAG-Token] can use different documents for generating each token.",
+    "synthetic": true
+  },
+  {
+    "question": "How does BEIT's approach to pixel-level input differ from iGPT and ViT-JFT300M regarding prediction bottleneck?",
+    "expected_paper_ids": [
+      "2106.08254"
+    ],
+    "expected_answer_gist": "BEIT uses discrete visual tokens as a prediction bottleneck for image patches, unlike iGPT which uses clustered image tokens, and ViT-JFT300M\u2019s approach involves predicting the mean and 3-bit color of masked patches.",
+    "synthetic": true
+  }
+]
