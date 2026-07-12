@@ -63,8 +63,11 @@ def _self_check(chunk: dict, candidate: Candidate, provider: str | None) -> bool
     except Exception:
         logger.warning("Self-check failed; dropping candidate", exc_info=True)
         return False
-    verdicts = {k.lower(): v.lower() == "yes"
-                for k, v in _CHECK_LINE.findall(resp.text)}
+    verdicts: dict[str, bool] = {}
+    for key, value in _CHECK_LINE.findall(resp.text):
+        key = key.lower()
+        passed = value.lower() == "yes"
+        verdicts[key] = verdicts.get(key, True) and passed
     return verdicts.get("answerable") is True and verdicts.get("faithful") is True
 
 
@@ -86,13 +89,15 @@ def generate_dataset(count: int, provider: str | None = None, seed: int = 0,
         candidate = _generate_candidate(chunk, provider)
         if candidate is None or not _self_check(chunk, candidate, provider):
             rejected += 1
-            continue
-        kept.append({
-            "question": candidate.question.strip(),
-            "expected_paper_ids": [chunk["paper_id"]],
-            "expected_answer_gist": candidate.expected_answer_gist.strip(),
-            "synthetic": True,
-        })
+        else:
+            kept.append({
+                "question": candidate.question.strip(),
+                "expected_paper_ids": [chunk["paper_id"]],
+                "expected_answer_gist": candidate.expected_answer_gist.strip(),
+                "synthetic": True,
+            })
+        print(f"\rkept {len(kept)}/{count} ({rejected} rejected)", end="", flush=True)
+    print()
     Path(out_path).write_text(json.dumps(kept, indent=2))
     return {"kept": len(kept), "rejected": rejected, "requested": count}
 
@@ -111,8 +116,9 @@ def main() -> None:
     print(f"kept {stats['kept']} / requested {stats['requested']} "
           f"({stats['rejected']} rejected) -> {DEFAULT_OUT_PATH}")
     if stats["kept"] < stats["requested"]:
-        print("Chunk supply exhausted before reaching the target — "
-              "ingest more papers or lower --count.")
+        print("Target not reached — chunk supply ran out or the self-check "
+              "rejected too many candidates (see rejected count). "
+              "Ingest more papers, lower --count, or try a stronger --provider.")
 
 
 if __name__ == "__main__":

@@ -79,6 +79,9 @@ uv run python -m rag.migrate --yes
 Eval metrics print with 95% bootstrap confidence intervals — `0.67 [0.51, 0.82]`
 in the summary, `0.67 ±0.08` per ablation cell — so preset differences can be
 read against their noise floor.
+Caveat: synthetic items share a generator with the LLM judge and are sampled
+from the ingested corpus, so absolute scores on the mixed set skew friendly —
+trust the ablation deltas, not the absolute numbers.
 
 Retrieval is a staged pipeline — `[rewrite] → embed → search (dense|sparse|hybrid) → [rerank] → [grade → retry once]` —
 controlled by `.env` flags (`RETRIEVAL_MODE`, `RERANK_ENABLED`, `REWRITE_ENABLED`, `GRADING_ENABLED`; see `config.py`).

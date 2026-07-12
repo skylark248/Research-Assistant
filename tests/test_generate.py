@@ -77,6 +77,16 @@ def test_self_check_no_drops_item(monkeypatch, tmp_path):
     assert json.loads(out.read_text()) == []
 
 
+def test_self_check_contradictory_verdicts_drop_item(monkeypatch, tmp_path):
+    from eval.generate import generate_dataset
+
+    _patch_generate(monkeypatch,
+                    check_text="answerable: no\nfaithful: yes\nanswerable: yes")
+    stats = generate_dataset(count=1, store=FakeStore(),
+                             out_path=str(tmp_path / "s.json"))
+    assert stats["kept"] == 0  # any "no" wins — fail-closed
+
+
 def test_self_check_garbage_drops_item(monkeypatch, tmp_path):
     from eval.generate import generate_dataset
 
