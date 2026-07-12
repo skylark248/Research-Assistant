@@ -91,7 +91,9 @@ eval.calibrate <cmd>`):
    in output as "contexts re-retrieved and re-graded when grading is
    enabled; pipeline drift folds into consistency".
 4. Caveat block always printed: n is small (CIs are wide), one annotator,
-   consistency ≠ correctness.
+   consistency ≠ correctness, and a mostly-synthetic sample means kappa
+   reflects generator-shared questions with range compression — read
+   jointly with MAE and the histograms.
 
 ### `eval/stats.py` gains
 
@@ -114,6 +116,7 @@ List of objects:
   "answer": "...",
   "judge": {"faithfulness": 4, "relevance": 5, "citation_accuracy": 2},
   "human": {"faithfulness": 3, "relevance": 5, "citation_accuracy": 3},
+  "synthetic": false,
   "labeled_at": "2026-07-12T14:05:00"
 }
 ```
