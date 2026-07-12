@@ -14,11 +14,14 @@ from rag.store import ScoredChunk, VectorStore
 
 
 def retrieve(question: str, top_k: int | None = None,
-             store: VectorStore | None = None) -> list[ScoredChunk]:
+             store: VectorStore | None = None,
+             rewrite: bool | None = None) -> list[ScoredChunk]:
     store = store or VectorStore()
     top_k = top_k or settings.retrieval_top_k
 
-    search_text = rewrite_query(question) if settings.rewrite_enabled else question
+    if rewrite is None:  # callers can pin it; default follows the flag
+        rewrite = settings.rewrite_enabled
+    search_text = rewrite_query(question) if rewrite else question
     fetch_k = settings.rerank_candidates if settings.rerank_enabled else top_k
 
     dense = embed_query(search_text) if settings.retrieval_mode in ("dense", "hybrid") else None
