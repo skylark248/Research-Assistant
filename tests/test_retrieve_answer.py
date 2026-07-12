@@ -119,7 +119,7 @@ def test_answer_question_builds_grounded_prompt(monkeypatch, guardrails_off):
     from llm.base import LLMResponse
 
     monkeypatch.setattr(answer_mod, "retrieve",
-                        lambda q, store=None, rewrite=None: [_chunk(), _chunk(pid="1810.04805", title="BERT")])
+                        lambda q, store=None: [_chunk(), _chunk(pid="1810.04805", title="BERT")])
     captured = {}
 
     def fake_generate(messages, **kwargs):
@@ -143,7 +143,7 @@ def test_answer_question_threads_provider_to_generate(monkeypatch, guardrails_of
     import rag.answer as answer_mod
     from llm.base import LLMResponse
 
-    monkeypatch.setattr(answer_mod, "retrieve", lambda q, store=None, rewrite=None: [_chunk()])
+    monkeypatch.setattr(answer_mod, "retrieve", lambda q, store=None: [_chunk()])
     captured = {}
 
     def fake_generate(messages, **kwargs):
@@ -161,7 +161,7 @@ def test_answer_question_threads_provider_to_generate(monkeypatch, guardrails_of
 def test_answer_question_empty_store(monkeypatch, guardrails_off):
     import rag.answer as answer_mod
 
-    monkeypatch.setattr(answer_mod, "retrieve", lambda q, store=None, rewrite=None: [])
+    monkeypatch.setattr(answer_mod, "retrieve", lambda q, store=None: [])
     monkeypatch.setattr(answer_mod, "generate",
                         lambda *a, **k: (_ for _ in ()).throw(AssertionError("no LLM call")))
 
@@ -181,7 +181,7 @@ def test_grading_filters_chunks_before_prompt(monkeypatch):
 
     monkeypatch.setattr(settings, "grading_enabled", True)
     monkeypatch.setattr(settings, "faithfulness_enabled", False)
-    monkeypatch.setattr(answer_mod, "retrieve", lambda q, store=None, rewrite=None: [
+    monkeypatch.setattr(answer_mod, "retrieve", lambda q, store=None: [
         _chunk(), _chunk(pid="1810.04805", title="BERT", text="bert stuff")])
     monkeypatch.setattr(answer_mod, "grade_chunks",
                         lambda q, chunks, provider=None: chunks[:1])
@@ -242,7 +242,7 @@ def test_retry_skipped_when_rewrite_fails_open(monkeypatch):
     monkeypatch.setattr(settings, "faithfulness_enabled", False)
     retrievals = []
     monkeypatch.setattr(answer_mod, "retrieve",
-                        lambda q, store=None, rewrite=None: retrievals.append(q) or [_chunk()])
+                        lambda q, store=None: retrievals.append(q) or [_chunk()])
     monkeypatch.setattr(answer_mod, "grade_chunks",
                         lambda q, chunks, provider=None: [])
     monkeypatch.setattr(answer_mod, "retry_rewrite_query",
@@ -257,7 +257,7 @@ def test_grading_disabled_never_calls_grader(monkeypatch):
 
     monkeypatch.setattr(settings, "grading_enabled", False)
     monkeypatch.setattr(settings, "faithfulness_enabled", False)
-    monkeypatch.setattr(answer_mod, "retrieve", lambda q, store=None, rewrite=None: [_chunk()])
+    monkeypatch.setattr(answer_mod, "retrieve", lambda q, store=None: [_chunk()])
     monkeypatch.setattr(answer_mod, "grade_chunks",
                         lambda *a, **k: (_ for _ in ()).throw(AssertionError("grader must not run")))
     monkeypatch.setattr(answer_mod, "generate",
@@ -271,7 +271,7 @@ def test_faithfulness_verdict_attached(monkeypatch):
 
     monkeypatch.setattr(settings, "grading_enabled", False)
     monkeypatch.setattr(settings, "faithfulness_enabled", True)
-    monkeypatch.setattr(answer_mod, "retrieve", lambda q, store=None, rewrite=None: [_chunk()])
+    monkeypatch.setattr(answer_mod, "retrieve", lambda q, store=None: [_chunk()])
     monkeypatch.setattr(answer_mod, "generate",
                         lambda *a, **k: _fake_llm("A [1706.03762]."))
     captured = {}
@@ -294,7 +294,7 @@ def test_on_status_receives_pipeline_events(monkeypatch):
     monkeypatch.setattr(settings, "grading_enabled", True)
     monkeypatch.setattr(settings, "faithfulness_enabled", True)
     monkeypatch.setattr(answer_mod, "retrieve",
-                        lambda q, store=None, rewrite=None: [_chunk(), _chunk(pid="p2")])
+                        lambda q, store=None: [_chunk(), _chunk(pid="p2")])
     monkeypatch.setattr(answer_mod, "grade_chunks",
                         lambda q, chunks, provider=None: chunks[:1])
     monkeypatch.setattr(answer_mod, "check_faithfulness", lambda *a, **k: True)
