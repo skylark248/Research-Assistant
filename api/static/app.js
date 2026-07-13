@@ -15,7 +15,26 @@ function el(tag, cls, text) {
   return node;
 }
 
-function scrollLog() { log.scrollTop = log.scrollHeight; }
+const scrollPill = document.getElementById("scroll-pill");
+let pinned = true;
+
+function scrollLog(force = false) {
+  if (force || pinned) {
+    log.scrollTop = log.scrollHeight;
+    scrollPill.hidden = true;
+  } else {
+    scrollPill.hidden = false;
+  }
+}
+
+log.addEventListener("scroll", () => {
+  pinned = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+  if (pinned) scrollPill.hidden = true;
+});
+scrollPill.addEventListener("click", () => {
+  pinned = true;
+  scrollLog(true);
+});
 
 function renderMarkdown(node, text) {
   if (typeof window.marked === "undefined" || typeof window.DOMPurify === "undefined") {
@@ -30,6 +49,43 @@ function addStatus(text) {
   log.appendChild(node);
   scrollLog();
   return node;
+}
+
+function toast(message) {
+  const box = document.getElementById("toasts");
+  const node = el("div", "toast", message);
+  node.addEventListener("click", () => node.remove());
+  box.appendChild(node);
+  setTimeout(() => node.remove(), 6000);
+}
+
+// ---------- welcome card ----------
+
+const EXAMPLE_QUESTIONS = [
+  "What attention mechanism does the Transformer rely on?",
+  "How does BERT's pre-training objective work?",
+  "What problem does retrieval-augmented generation solve?",
+];
+
+function renderWelcome() {
+  const card = el("div", "welcome");
+  card.appendChild(el("div", "welcome-title", "Ask about the ingested papers"));
+  card.appendChild(el("div", "welcome-sub",
+    "Answers stream with live agent activity, [paper_id] citations, and a faithfulness check."));
+  for (const q of EXAMPLE_QUESTIONS) {
+    const btn = el("button", "example", q);
+    btn.addEventListener("click", () => {
+      input.value = q;
+      sendMessage();
+    });
+    card.appendChild(btn);
+  }
+  log.appendChild(card);
+}
+
+function clearWelcome() {
+  const card = log.querySelector(".welcome");
+  if (card) card.remove();
 }
 
 // ---------- turn component ----------
@@ -114,6 +170,11 @@ async function loadProviders() {
     if (p.available && (selected === null || p.is_default)) selected = p.provider;
   }
   if (selected) providerSelect.value = selected;
+  const banner = document.getElementById("provider-banner");
+  const none = selected === null;
+  banner.hidden = !none;
+  input.disabled = none;
+  sendBtn.disabled = none;
 }
 
 // ---------- SSE chat ----------
@@ -139,6 +200,7 @@ async function sendMessage() {
   const message = input.value.trim();
   if (!message) return;
   input.value = "";
+  clearWelcome();
 
   const turn = startTurn(message);
   const body = { message, provider: providerSelect.value || null };
@@ -192,7 +254,7 @@ async function sendMessage() {
           turn.assistant.textContent = "⚠ failed — try again";
           turn.assistant.classList.add("failed");
           finishActivity(turn);
-          addStatus(`Chat failed: ${data.message}`);
+          toast(`Chat failed: ${data.message}`);
           finished = true;
         }
       });
@@ -202,7 +264,7 @@ async function sendMessage() {
     turn.assistant.textContent = "⚠ failed — try again";
     turn.assistant.classList.add("failed");
     finishActivity(turn);
-    addStatus(`Chat failed: ${err.message}`);
+    toast(`Chat failed: ${err.message}`);
   } finally {
     inFlight = false;
     sendBtn.disabled = false;
@@ -237,9 +299,11 @@ async function loadThreads() {
 
 async function openThread(id) {
   document.body.classList.remove("sidebar-open"); // close mobile drawer
+  log.replaceChildren(el("div", "status", "loading…"));
   const resp = await fetch(`/api/threads/${id}`);
   if (!resp.ok) {
-    addStatus("No transcript available for this thread.");
+    toast("No transcript for this thread.");
+    startNewConversation();
     return;
   }
   const turns = await resp.json();
@@ -262,7 +326,7 @@ async function openThread(id) {
 function startNewConversation() {
   threadId = null;
   log.replaceChildren();
-  addStatus("New conversation started.");
+  renderWelcome();
   loadThreads();
 }
 
@@ -283,12 +347,19 @@ document.getElementById("ingest-btn").addEventListener("click", async () => {
   if (!query) return;
   const status = document.getElementById("ingest-status");
   status.textContent = "Ingesting… (downloads, parses, and embeds PDFs — may take a minute)";
+  const btn = document.getElementById("ingest-btn");
+  btn.disabled = true;
+  btn.classList.add("busy");
   try {
     const result = await post("/api/ingest", { query, max_results: 3 });
     status.textContent = `Ingested: ${result.ingested.join(", ") || "none"}` +
       (result.skipped.length ? ` | Skipped: ${result.skipped.join(", ")}` : "");
   } catch (err) {
+    toast(`Ingest failed: ${err.message}`);
     status.textContent = `Ingest failed: ${err.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("busy");
   }
 });
 
@@ -302,6 +373,11 @@ input.addEventListener("keydown", (e) => {
   }
 });
 document.getElementById("new-conv-btn").addEventListener("click", startNewConversation);
+input.addEventListener("input", () => {
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight, 148) + "px";
+});
 
 loadProviders();
 loadThreads();
+renderWelcome();

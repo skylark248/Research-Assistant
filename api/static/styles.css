@@ -185,11 +185,3 @@ a.chip:hover { color: var(--accent); }
   }
   .msg.user { max-width: 92%; }
 }
-
-/* ---------- LEGACY classes for pre-Task-2 app.js — DELETE in Task 3 ---------- */
-.user { color: var(--fg); background: var(--bg-inset); border-radius: var(--radius); padding: var(--s2) var(--s3); margin: var(--s2) 0; }
-.bot { background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--s2) var(--s3); margin: var(--s2) 0; }
-.activity { color: var(--fg-muted); font-size: 12px; margin: 2px 0 2px var(--s4); }
-.citations { margin: var(--s1) 0 var(--s3); }
-.citations a { display: inline-block; font-size: 12px; background: var(--bg-inset); border-radius: 10px; padding: 2px var(--s2); margin-right: var(--s1); color: var(--fg-muted); text-decoration: none; }
-.verdict { display: inline-block; font-size: 12px; background: var(--warn-bg); color: var(--warn-fg); border-radius: 10px; padding: 2px var(--s2); margin: var(--s1) 0 var(--s3); }
