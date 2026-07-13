@@ -4,7 +4,7 @@ Learning project covering LLM APIs + prompting, RAG, evaluation, and agents + MC
 Ingests arXiv papers, answers questions grounded in them with [paper_id] citations,
 and autonomously fetches papers it doesn't have yet.
 
-## Status: complete (all 7 phases shipped)
+## Status: complete (all 8 phases shipped)
 
 | Phase | Delivered |
 |-------|-----------|
@@ -15,6 +15,7 @@ and autonomously fetches papers it doesn't have yet.
 | 5 | Corrective RAG (LLM chunk grading + one rewritten-query retry + honest degradation) and a citation-faithfulness guardrail with an "unverified citations" badge in the UI |
 | 6 | Synthetic eval generation (LLM question/gist from ingested chunks, fail-closed self-check, grows golden set 3 → 50+) and 95% bootstrap CIs on every eval metric and ablation cell |
 | 7 | Judge calibration: blind human-labeling CLI, judge-vs-human agreement (quadratic-weighted kappa + MAE with bootstrap CIs), test-retest consistency mode |
+| 8 | UI/UX refresh: token design system with auto/manual dark mode, per-reply agent-activity accordion, welcome/empty states, error toasts, scroll pinning, mobile drawer layout |
 
 Design specs and implementation plans for each phase live in
 `docs/superpowers/specs/` and `docs/superpowers/plans/`. Known limitation:
@@ -53,6 +54,14 @@ deliberately as the pinned baseline for the pending calibration session.
   real keys.
 - **Ablation on the 53-item set:** `--ablation` sweeps 6 presets × 53 items —
   hours on the 3B model. Run it chunked or wait for a cloud key.
+- **Phase-8 UI browser smoke check (not yet run):** the new web UI passed a
+  static code review but hasn't been eyeballed live — Docker (hence Qdrant)
+  was down at ship time and the app fail-fasts on startup without it. To
+  verify: launch Docker Desktop, `docker compose up -d`,
+  `uv run uvicorn api.main:app --reload`, then walk the checklist at the end
+  of `docs/superpowers/plans/2026-07-13-phase-8-ui-ux-refresh.md` (dark-mode
+  persistence, mobile drawer, activity accordion, error toast, thread
+  restore).
 
 ## Setup
 
@@ -147,15 +156,20 @@ Chat is multi-turn: the UI carries a `thread_id`, history is checkpointed to
 `data/checkpoints.db`, long conversations get summarized. `AGENT_MODE=multi`
 switches to a planner → researcher → synthesizer supervisor.
 
-The web UI (phase 4):
-- **Per-request provider toggle** — dropdown switches reasoning between
-  Anthropic / OpenAI / local Ollama per message; `GET /api/providers` grays out
-  providers with no key or no reachable Ollama.
-- **Streaming** — replies arrive over SSE (`POST /api/chat/stream`): live agent
-  activity ("calling rag_query…") plus token-by-token text.
-- **Citations** — chips under each reply link the arXiv papers the answer drew on.
-- **Thread sidebar** — past conversations persist (list / restore / delete);
-  markdown rendering via vendored `marked` + `DOMPurify` (works offline, no build step).
+The web UI (phases 4 + 8):
+- **Per-request provider toggle** — header dropdown switches reasoning between
+  Anthropic / OpenAI / local Ollama per message; a banner + disabled input
+  appear when no provider is available.
+- **Streaming with an activity accordion** — replies stream over SSE; each
+  reply's agent trace ("calling rag_query…", "grading 8 chunks…") lives in a
+  collapsible block attached to that reply, folding to "⚙ N steps" when done.
+- **Citations + faithfulness** — [paper_id] chips link to arXiv; unverified
+  answers get a warning chip; a copy button grabs the reply's markdown.
+- **Dark mode** — follows the OS by default; header toggle cycles
+  auto → light → dark (persisted).
+- **Thread sidebar** — persistent conversations (list / restore / delete);
+  collapses to a drawer on small screens; ingest lives at the sidebar bottom.
+- Vanilla JS + vendored `marked`/`DOMPurify` — no build step, works offline.
 
 Keyless demo: set `RETRIEVAL_MODE=sparse` — BM25-only retrieval, no OpenAI key.
 First reranked query downloads the ~80MB cross-encoder to the local cache.

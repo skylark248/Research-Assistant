@@ -2,66 +2,87 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Paper Research Assistant</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; margin: 0; display: flex; height: 100vh; }
-    #sidebar { width: 260px; border-right: 1px solid #ddd; padding: 1rem; overflow-y: auto; flex-shrink: 0; }
-    #sidebar h2 { font-size: .9rem; text-transform: uppercase; color: #777; margin: 0 0 .5rem; }
-    .thread { display: flex; align-items: center; gap: .3rem; padding: .35rem .5rem; border-radius: 6px; cursor: pointer; font-size: .85rem; }
-    .thread:hover { background: #f0f0f0; }
-    .thread.active { background: #e6ecff; }
-    .thread .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .thread .del { border: none; background: none; color: #999; cursor: pointer; }
-    .thread .del:hover { color: #c00; }
-    #main { flex: 1; display: flex; flex-direction: column; max-width: 860px; margin: 0 auto; padding: 1rem; min-width: 0; }
-    h1 { font-size: 1.3rem; margin: 0 0 1rem; }
-    fieldset { border: 1px solid #ccc; border-radius: 6px; margin-bottom: 1rem; }
-    input[type=text] { padding: .5rem; }
-    button { padding: .5rem 1rem; }
-    #log { flex: 1; overflow-y: auto; border: 1px solid #ccc; border-radius: 6px; padding: 1rem; }
-    .user { color: #003; background: #eef2ff; border-radius: 8px; padding: .5rem .75rem; margin: .5rem 0; }
-    .bot { color: #030; background: #f2fff2; border-radius: 8px; padding: .5rem .75rem; margin: .5rem 0; }
-    .bot p:first-child { margin-top: 0; }
-    .bot p:last-child { margin-bottom: 0; }
-    .status { color: #888; font-style: italic; font-size: .85rem; margin: .2rem 0; }
-    .activity { color: #999; font-size: .8rem; margin: .15rem 0 .15rem 1rem; }
-    .citations { margin: .25rem 0 .75rem; }
-    .citations a { display: inline-block; font-size: .75rem; background: #eee; border-radius: 10px; padding: .1rem .5rem; margin-right: .3rem; color: #336; text-decoration: none; }
-    .citations a:hover { background: #ddd; }
-    .verdict { display: inline-block; font-size: .75rem; background: #fff3cd; color: #8a6d1a; border-radius: 10px; padding: .1rem .5rem; margin: .25rem 0 .75rem; }
-    #chat-row { display: flex; gap: .5rem; margin-top: 1rem; }
-    #chat-input { flex: 1; }
-    #provider { padding: .4rem; }
-    #ingest-row input { width: 60%; }
-  </style>
+  <link rel="stylesheet" href="/styles.css">
+  <script>
+    // pre-paint theme stamp — prevents a light flash for dark-mode users
+    const savedTheme = localStorage.getItem("theme");
+    if (savedTheme === "light" || savedTheme === "dark") {
+      document.documentElement.dataset.theme = savedTheme;
+    }
+  </script>
 </head>
 <body>
-  <nav id="sidebar">
-    <button id="new-conv-btn" style="width:100%; margin-bottom:1rem;">+ New conversation</button>
-    <h2>Threads</h2>
-    <div id="thread-list"></div>
-  </nav>
-
-  <main id="main">
+  <header id="topbar">
+    <button id="menu-btn" aria-label="Toggle sidebar">☰</button>
     <h1>Paper Research Assistant</h1>
+    <select id="provider" title="Reasoning model"></select>
+    <button id="theme-btn" aria-label="Toggle theme"></button>
+  </header>
 
-    <fieldset id="ingest-row">
-      <legend>Ingest papers</legend>
-      <input id="ingest-query" type="text" placeholder="arXiv search, e.g. attention is all you need">
-      <button id="ingest-btn">Ingest</button>
-      <div id="ingest-status" class="status"></div>
-    </fieldset>
+  <div id="backdrop"></div>
 
-    <div id="log"></div>
+  <div id="shell">
+    <nav id="sidebar">
+      <button id="new-conv-btn">+ New conversation</button>
+      <h2>Threads</h2>
+      <div id="thread-list"></div>
+      <details id="ingest">
+        <summary>Ingest papers</summary>
+        <input id="ingest-query" type="text" placeholder="arXiv search, e.g. attention is all you need">
+        <button id="ingest-btn">Ingest</button>
+        <div id="ingest-status" class="status"></div>
+      </details>
+    </nav>
 
-    <div id="chat-row">
-      <input id="chat-input" type="text" placeholder="Ask about the ingested papers…">
-      <select id="provider" title="Reasoning model"></select>
-      <button id="chat-btn">Send</button>
-    </div>
-  </main>
+    <main id="main">
+      <div id="log"></div>
+      <button id="scroll-pill" hidden>↓ new messages</button>
+      <div id="provider-banner" hidden>
+        No provider available — start Ollama (<code>ollama serve</code>) or add an
+        API key to <code>.env</code>, then reload.
+      </div>
+      <div id="chat-row">
+        <textarea id="chat-input" rows="1" placeholder="Ask about the ingested papers…"></textarea>
+        <button id="chat-btn">Send</button>
+      </div>
+    </main>
+  </div>
 
+  <div id="toasts"></div>
+
+  <script>
+    // Theme toggle: auto → light → dark. Owned here, not by app.js.
+    (function () {
+      const btn = document.getElementById("theme-btn");
+      function label() {
+        const t = document.documentElement.dataset.theme || "auto";
+        btn.textContent = t === "dark" ? "🌙" : t === "light" ? "☀️" : "🌓";
+        btn.title = "theme: " + t;
+      }
+      btn.addEventListener("click", () => {
+        const cur = document.documentElement.dataset.theme || "auto";
+        const next = cur === "auto" ? "light" : cur === "light" ? "dark" : "auto";
+        if (next === "auto") {
+          localStorage.removeItem("theme");
+          delete document.documentElement.dataset.theme;
+        } else {
+          localStorage.setItem("theme", next);
+          document.documentElement.dataset.theme = next;
+        }
+        label();
+      });
+      label();
+    })();
+    // Mobile drawer. app.js closes it on thread selection via body class.
+    (function () {
+      document.getElementById("menu-btn").addEventListener("click",
+        () => document.body.classList.toggle("sidebar-open"));
+      document.getElementById("backdrop").addEventListener("click",
+        () => document.body.classList.remove("sidebar-open"));
+    })();
+  </script>
   <script src="/vendor/marked.min.js"></script>
   <script src="/vendor/purify.min.js"></script>
   <script src="/app.js"></script>
