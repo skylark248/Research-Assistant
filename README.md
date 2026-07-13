@@ -21,11 +21,46 @@ Design specs and implementation plans for each phase live in
 the 3B local model occasionally fumbles the agent tool-call loop — use
 `LOCAL_MODEL=qwen2.5:7b` if you have the RAM (see notes below).
 
+## Current eval snapshot (2026-07-13, qwen2.5:3b, 53 questions)
+
+From the committed `report.json` (3 hand-written + 50 synthetic items, 95% bootstrap CIs):
+
+```
+retrieval precision : 0.83 [0.74, 0.92]
+retrieval recall    : 0.89 [0.79, 0.96]
+faithfulness        : 3.51 [3.23, 3.81] / 5
+relevance           : 4.55 [4.38, 4.70] / 5
+citation accuracy   : 2.43 [2.19, 2.70] / 5   <- the 3B model's known weak spot
+verified answers    : 67% [55%, 80%]           (phase-5 faithfulness guardrail)
+
+[hand]      n=3   precision 0.83  recall 1.00  faith 4.67  rel 4.00  cite 2.67
+[synthetic] n=50  precision 0.83  recall 0.88  faith 3.44  rel 4.58  cite 2.42
+```
+
+`report.json` is normally gitignored (regenerable); this snapshot is committed
+deliberately as the pinned baseline for the pending calibration session.
+
+### Pending work
+
+- **Human labeling session (phase 7's payoff, ~15 min, not yet done):**
+  `uv run python -m eval.calibrate label` → blind-score 20 sampled answers →
+  commit `eval/human-labels.json` → `uv run python -m eval.calibrate report`.
+  Until then the judge behind every number above is uncalibrated.
+- **Cloud API keys never configured:** `.env` has placeholder
+  `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` values. Everything above ran on local
+  `qwen2.5:3b`; the cloud providers, `pytest -m integration`, and a
+  3B-vs-cloud comparison (the obvious fix for citation accuracy) all await
+  real keys.
+- **Ablation on the 53-item set:** `--ablation` sweeps 6 presets × 53 items —
+  hours on the 3B model. Run it chunked or wait for a cloud key.
+
 ## Setup
 
 ```bash
 uv sync
-cp .env.example .env   # add ANTHROPIC_API_KEY and OPENAI_API_KEY
+cp .env.example .env   # cloud keys OPTIONAL — this repo currently runs fully
+                       # local; add ANTHROPIC_API_KEY / OPENAI_API_KEY to
+                       # unlock the provider toggle + integration tests
 docker compose up -d   # Qdrant on localhost:6333
 ```
 
@@ -61,7 +96,11 @@ uv run uvicorn api.main:app --reload
 # Ingest from the CLI
 uv run python -c "from rag.ingest import ingest_query; print(ingest_query('attention is all you need'))"
 
-# Offline eval -> report.json + printed summary
+# Offline eval -> report.json + printed summary (CIs + hand/synthetic split).
+# ~1h for 53 items on qwen2.5:3b. On 8GB RAM use the serve flags above AND
+# split the run: pass --dataset with slices of the item list in separate
+# processes, then merge rows (ONNX models + KV cache in one long process
+# is what OOMed an M1 Air)
 uv run python -m eval.run
 
 # Retrieval ablation: dataset across dense/sparse/hybrid/rerank/grade/rewrite presets
