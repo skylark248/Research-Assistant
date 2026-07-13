@@ -44,13 +44,6 @@ function renderMarkdown(node, text) {
   node.innerHTML = DOMPurify.sanitize(marked.parse(text));
 }
 
-function addStatus(text) {
-  const node = el("div", "status", text);
-  log.appendChild(node);
-  scrollLog();
-  return node;
-}
-
 function toast(message) {
   const box = document.getElementById("toasts");
   const node = el("div", "toast", message);

@@ -115,8 +115,7 @@ textarea { resize: none; }
 .msg { border-radius: var(--radius); padding: var(--s3) var(--s4); }
 .msg.user {
   background: var(--accent); color: var(--accent-fg);
-  margin-left: 20%; margin-bottom: var(--s2); width: fit-content; max-width: 80%;
-  margin-left: auto;
+  margin-left: auto; margin-bottom: var(--s2); width: fit-content; max-width: 80%;
 }
 .msg.assistant { background: var(--bg-raised); border: 1px solid var(--border); }
 .msg.assistant p:first-child { margin-top: 0; }
