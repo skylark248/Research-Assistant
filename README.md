@@ -54,6 +54,14 @@ deliberately as the pinned baseline for the pending calibration session.
   real keys.
 - **Ablation on the 53-item set:** `--ablation` sweeps 6 presets × 53 items —
   hours on the 3B model. Run it chunked or wait for a cloud key.
+- **Phase-8 UI browser smoke check (not yet run):** the new web UI passed a
+  static code review but hasn't been eyeballed live — Docker (hence Qdrant)
+  was down at ship time and the app fail-fasts on startup without it. To
+  verify: launch Docker Desktop, `docker compose up -d`,
+  `uv run uvicorn api.main:app --reload`, then walk the checklist at the end
+  of `docs/superpowers/plans/2026-07-13-phase-8-ui-ux-refresh.md` (dark-mode
+  persistence, mobile drawer, activity accordion, error toast, thread
+  restore).
 
 ## Setup
 
